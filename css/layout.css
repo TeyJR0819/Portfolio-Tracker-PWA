@@ -1,0 +1,205 @@
+/* Page structure: header, tabs, grids. Mobile first; wider screens add columns. */
+
+.app {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Header */
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  padding: calc(var(--space-3) + var(--safe-top)) var(--space-4) var(--space-3);
+  background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-large);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sync-status {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* Tabs */
+.tab-bar {
+  position: sticky;
+  top: calc(var(--touch-target) + var(--space-5) + var(--safe-top));
+  z-index: 10;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab-list {
+  display: flex;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 0 var(--space-3);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* Content */
+.content {
+  display: grid;
+  gap: var(--space-4);
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) calc(6rem + var(--safe-bottom));
+}
+
+.tab-panel {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.metric-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metric-grid > .metric-card-lead {
+  grid-column: 1 / -1;
+}
+
+.panel-grid,
+.chart-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.chart-box {
+  position: relative;
+  height: 18rem;
+}
+
+.chart-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.notice-banner {
+  max-width: var(--page-width);
+  margin: var(--space-3) auto 0;
+  padding: 0 var(--space-4);
+}
+
+/* Floating add button on phones */
+.fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + var(--safe-bottom));
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.fab:active {
+  transform: scale(0.94);
+}
+
+.top-actions .only-wide {
+  display: none;
+}
+
+/* Desktop and up */
+@media (min-width: 64rem) {
+  .top-bar {
+    grid-template-columns: auto 1fr auto;
+    padding-inline: var(--space-5);
+  }
+
+  .sync-status {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: start;
+  }
+
+  .tab-bar {
+    top: calc(var(--touch-target) + var(--space-4) + var(--safe-top));
+  }
+
+  .content {
+    padding-inline: var(--space-5);
+  }
+
+  .metric-grid-four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .metric-grid-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-grid > .metric-card-lead {
+    grid-column: auto;
+  }
+
+  .panel-grid {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    align-items: start;
+  }
+
+  .chart-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .top-actions .only-wide {
+    display: inline-flex;
+  }
+
+  .fab {
+    display: none;
+  }
+}
+
+/* Phones and tablets: hide the text beside header icons */
+@media (max-width: 63.99rem) {
+  .button-label {
+    display: none;
+  }
+}

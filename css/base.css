@@ -1,0 +1,156 @@
+/* Design tokens and page-wide defaults.
+   Change colours, spacing and timing here and the whole app follows. */
+
+:root {
+  /* Colour */
+  --color-bg: #0b1018;
+  --color-surface: #121a26;
+  --color-surface-raised: #182233;
+  --color-border: #243044;
+  --color-text: #e9eef6;
+  --color-text-muted: #94a3b8;
+  --color-accent: #d9b26f;
+  --color-accent-ink: #1a1408;
+  --color-positive: #34d399;
+  --color-negative: #f87171;
+  --color-warning: #fbbf24;
+  --color-focus: #8ab4ff;
+  --color-scrim: rgba(5, 8, 13, 0.72);
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --text-small: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-large: 1.125rem;
+  --text-metric: clamp(1.15rem, 0.7rem + 1.6vw, 2rem);
+
+  /* Space and shape */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --radius-small: 0.5rem;
+  --radius-medium: 0.875rem;
+  --radius-large: 1.25rem;
+  --touch-target: 2.75rem;
+  --page-width: 75rem;
+
+  /* Motion. --duration-overlay must match CLOSE_DELAY_MS in js/ui/overlay.js. */
+  --duration-fast: 160ms;
+  --duration-medium: 260ms;
+  --duration-overlay: 280ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Safe areas for phones with a notch or home bar */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.is-scroll-locked {
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+fieldset {
+  margin: 0;
+  padding: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.icon-sprite {
+  position: absolute;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.is-positive {
+  color: var(--color-positive);
+}
+
+.is-negative {
+  color: var(--color-negative);
+}
+
+.is-neutral {
+  color: var(--color-text);
+}

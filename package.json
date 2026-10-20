@@ -1,0 +1,10 @@
+{
+  "name": "portfolio-tracker-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MYR investment portfolio dashboard (static PWA). This file only runs the tests.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,147 @@
+/* Keyframes and loading states. Every animation stops when the person
+   has asked their device for reduced motion (see the last block). */
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes loading-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+
+@keyframes pin-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-9px);
+  }
+  40%,
+  80% {
+    transform: translateX(9px);
+  }
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Tab switch: the new panel fades in and slides up slightly. */
+.tab-panel:not([hidden]) {
+  animation: panel-in var(--duration-medium) var(--ease-out) both;
+}
+
+.toast.is-visible {
+  animation: toast-in var(--duration-medium) var(--ease-out) both;
+}
+
+.pin-dots.is-error {
+  animation: pin-shake 0.42s ease;
+}
+
+.sync-status[data-tone='busy'] .sync-dot {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+/* Thin progress bar at the top of the page while data loads. */
+.loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 70;
+  height: 3px;
+  overflow: hidden;
+}
+
+.loading-bar span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: var(--color-accent);
+  animation: loading-slide 1.1s ease-in-out infinite;
+}
+
+/* Skeletons: shown until the first load finishes. */
+.table-skeleton {
+  display: none;
+  gap: var(--space-3);
+}
+
+.table-skeleton span {
+  height: 1.75rem;
+  border-radius: var(--radius-small);
+}
+
+.is-initial-load .table-skeleton {
+  display: grid;
+}
+
+.is-initial-load .table-scroll,
+.is-initial-load .chart-box canvas {
+  display: none;
+}
+
+.is-initial-load .chart-box {
+  border-radius: var(--radius-medium);
+}
+
+.is-initial-load .skeleton-target,
+.is-initial-load .table-skeleton span,
+.is-initial-load .chart-box {
+  color: transparent;
+  background: linear-gradient(90deg, var(--color-surface-raised) 25%, var(--color-border) 50%, var(--color-surface-raised) 75%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-small);
+  animation: shimmer 1.4s linear infinite;
+}
+
+.is-initial-load .chart-empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
