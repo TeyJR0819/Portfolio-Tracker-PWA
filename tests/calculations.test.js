@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildCsv } from '../js/logic/export-csv.js';
-import { formatRm, formatSignedRm } from '../js/logic/format.js';
+import { buildCsv } from '../public/js/logic/export-csv.js';
+import { formatRm, formatSignedRm } from '../public/js/logic/format.js';
 import {
   applyTransaction,
   buildHoldings,
   groupTotals,
   resolveUnitPrice,
   summarise,
-} from '../js/logic/calculations.js';
+} from '../public/js/logic/calculations.js';
 
 const btc = { id: 1, category: 'Crypto', broker: 'Luno', asset: 'BTC', qty: 2, costMyr: 200000, realisedPl: 0 };
 

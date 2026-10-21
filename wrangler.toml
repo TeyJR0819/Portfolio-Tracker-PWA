@@ -1,0 +1,4 @@
+# Cloudflare Pages settings. Used by "npx wrangler pages deploy" and by Git-connected builds.
+name = "portfolio-tracker-pwa"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "public"

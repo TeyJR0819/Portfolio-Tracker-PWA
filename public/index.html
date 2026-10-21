@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>MYR Portfolio</title>
+    <meta name="description" content="Personal MYR investment portfolio dashboard." />
+
+    <!-- Security: only this site and the jsDelivr CDN may run scripts. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'none'"
+    />
+
+    <!-- Progressive Web App -->
+    <meta name="theme-color" content="#0b1018" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Portfolio" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
+
+    <link rel="stylesheet" href="./css/base.css" />
+    <link rel="stylesheet" href="./css/layout.css" />
+    <link rel="stylesheet" href="./css/components.css" />
+    <link rel="stylesheet" href="./css/animations.css" />
+
+    <!-- Libraries. Pinned versions with integrity hashes. See README to update them. -->
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+      integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"
+      integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK"
+      crossorigin="anonymous"
+    ></script>
+    <script type="module" src="./js/main.js"></script>
+  </head>
+
+  <body class="is-initial-load">
+    <!-- Icon sprite. Use an icon with: <svg class="icon"><use href="#icon-name"></use></svg> -->
+    <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
+      <symbol id="icon-summary" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></symbol>
+      <symbol id="icon-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v.01M18 14.5v.01"/></symbol>
+      <symbol id="icon-stocks" viewBox="0 0 24 24"><path d="M3 17l5.5-6 4 4L21 6.5"/><path d="M15 6.5h6v6"/></symbol>
+      <symbol id="icon-mmf" viewBox="0 0 24 24"><path d="M12 3.5l9 4.8-9 4.8-9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8"/><path d="M3 16.5l9 4.8 9-4.8"/></symbol>
+      <symbol id="icon-crypto" viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M9.5 9.5h4a1.7 1.7 0 010 3.4h-4m0 0h4.4a1.8 1.8 0 010 3.6H9.5M9.5 9.5v7M11.5 8v1.5M11.5 16.5V18"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.3-4.5L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0014.3 4.5L20 15.5"/><path d="M20 20v-4.5h-4.5"/></symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7.5 11L12 15.5 16.5 11"/><path d="M4.5 19.5h15"/></symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="icon-backspace" viewBox="0 0 24 24"><path d="M9 5.5h10a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H9L3.5 12z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></symbol>
+    </svg>
+
+    <div class="loading-bar" id="loading-bar" aria-hidden="true" hidden><span></span></div>
+    <p class="fatal-error" id="fatal-error" role="alert" hidden></p>
+    <noscript><p class="fatal-error">This app needs JavaScript. Turn it on in your browser settings.</p></noscript>
+
+    <div class="app" id="app" hidden>
+      <header class="top-bar">
+        <div class="brand">
+          <img class="brand-mark" src="./assets/icons/icon.svg" alt="" width="32" height="32" />
+          <span class="brand-name">MYR Portfolio</span>
+        </div>
+
+        <p class="sync-status" id="sync-status" data-tone="busy" role="status">
+          <span class="sync-dot" aria-hidden="true"></span>
+          <span id="sync-status-text">Loading prices</span>
+        </p>
+
+        <div class="top-actions">
+          <button class="button button-quiet" type="button" data-action="refresh" aria-label="Refresh prices" title="Refresh prices">
+            <svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+            <span class="button-label">Refresh</span>
+          </button>
+          <button class="button button-quiet" type="button" data-action="export" aria-label="Export CSV" title="Export CSV">
+            <svg class="icon" aria-hidden="true"><use href="#icon-download"></use></svg>
+            <span class="button-label">Export CSV</span>
+          </button>
+          <button class="button button-primary only-wide" type="button" data-action="add-transaction">
+            <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+            <span>Add transaction</span>
+          </button>
+          <button class="button button-quiet" type="button" data-action="lock" aria-label="Lock dashboard" title="Lock dashboard">
+            <svg class="icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
+            <span class="button-label">Lock dashboard</span>
+          </button>
+        </div>
+      </header>
+
+      <nav class="tab-bar" aria-label="Dashboard sections">
+        <div class="tab-list" id="tab-list" role="tablist">
+          <button class="tab-button" type="button" role="tab" id="tab-summary" data-tab="summary" aria-selected="true" aria-controls="panel-summary">
+            <svg class="icon" aria-hidden="true"><use href="#icon-summary"></use></svg><span>Summary</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-cash" data-tab="cash" aria-selected="false" tabindex="-1" aria-controls="panel-cash">
+            <svg class="icon" aria-hidden="true"><use href="#icon-cash"></use></svg><span>Cash</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-stocks" data-tab="stocks" aria-selected="false" tabindex="-1" aria-controls="panel-stocks">
+            <svg class="icon" aria-hidden="true"><use href="#icon-stocks"></use></svg><span>Stocks</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-mmf" data-tab="mmf" aria-selected="false" tabindex="-1" aria-controls="panel-mmf">
+            <svg class="icon" aria-hidden="true"><use href="#icon-mmf"></use></svg><span>MMF</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-crypto" data-tab="crypto" aria-selected="false" tabindex="-1" aria-controls="panel-crypto">
+            <svg class="icon" aria-hidden="true"><use href="#icon-crypto"></use></svg><span>Crypto</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="notice-banner" id="notice-banner" role="status" hidden></div>
+
+      <main class="content">
+        <section class="card data-error" id="data-error" role="alert" hidden>
+          <h2 class="card-title">Portfolio data did not load</h2>
+          <p id="data-error-message"></p>
+          <button class="button button-primary" type="button" data-action="retry">Try again</button>
+        </section>
+
+        <!-- Summary -->
+        <section class="tab-panel" id="panel-summary" role="tabpanel" aria-labelledby="tab-summary" data-panel="summary">
+          <div class="metric-grid metric-grid-four">
+            <article class="metric-card metric-card-lead">
+              <h3 class="metric-label">Total market value</h3>
+              <p class="metric-value skeleton-target" id="metric-total-value">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Total cost basis</h3>
+              <p class="metric-value skeleton-target" id="metric-cost-basis">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Unrealised P/L</h3>
+              <p class="metric-value skeleton-target" id="metric-unrealised-pl">RM 0.00</p>
+              <p class="metric-note"><span class="skeleton-target" id="metric-unrealised-pct">0.00%</span> of cost</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Realised P/L</h3>
+              <p class="metric-value skeleton-target" id="metric-realised-pl">RM 0.00</p>
+            </article>
+          </div>
+
+          <div class="panel-grid">
+            <article class="card chart-card">
+              <h3 class="card-title">Allocation by category</h3>
+              <div class="chart-box">
+                <canvas id="chart-summary-allocation" role="img" aria-label="Allocation by category"></canvas>
+                <p class="chart-empty" hidden>No holdings to chart yet.</p>
+              </div>
+            </article>
+
+            <article class="card table-card">
+              <h3 class="card-title">Categories</h3>
+              <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+              <div class="table-scroll"><table class="data-table" id="table-summary"></table></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Cash -->
+        <section class="tab-panel" id="panel-cash" role="tabpanel" aria-labelledby="tab-cash" data-panel="cash" hidden>
+          <div class="metric-grid metric-grid-one">
+            <article class="metric-card metric-card-lead">
+              <h3 class="metric-label">Total cash</h3>
+              <p class="metric-value skeleton-target" id="metric-cash-total">RM 0.00</p>
+            </article>
+          </div>
+
+          <div class="panel-grid">
+            <article class="card chart-card">
+              <h3 class="card-title">Bank cash and Luno cash</h3>
+              <div class="chart-box">
+                <canvas id="chart-cash-split" role="img" aria-label="Bank cash compared with Luno cash"></canvas>
+                <p class="chart-empty" hidden>No cash recorded yet.</p>
+              </div>
+            </article>
+
+            <article class="card table-card">
+              <h3 class="card-title">Cash accounts</h3>
+              <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="table-scroll"><table class="data-table" id="table-cash"></table></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Stocks -->
+        <section class="tab-panel" id="panel-stocks" role="tabpanel" aria-labelledby="tab-stocks" data-panel="stocks" hidden>
+          <div class="metric-grid metric-grid-three">
+            <article class="metric-card metric-card-lead">
+              <h3 class="metric-label">ETF market value</h3>
+              <p class="metric-value skeleton-target" id="metric-stocks-value">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">ETF cost basis</h3>
+              <p class="metric-value skeleton-target" id="metric-stocks-cost">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Unrealised P/L</h3>
+              <p class="metric-value skeleton-target" id="metric-stocks-pl">RM 0.00</p>
+              <p class="metric-note"><span class="skeleton-target" id="metric-stocks-pct">0.00%</span> of cost</p>
+            </article>
+          </div>
+
+          <article class="card table-card">
+            <h3 class="card-title">US ETF holdings</h3>
+            <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="table-scroll"><table class="data-table" id="table-stocks"></table></div>
+          </article>
+        </section>
+
+        <!-- MMF -->
+        <section class="tab-panel" id="panel-mmf" role="tabpanel" aria-labelledby="tab-mmf" data-panel="mmf" hidden>
+          <div class="metric-grid metric-grid-three">
+            <article class="metric-card metric-card-lead">
+              <h3 class="metric-label">Fund balance</h3>
+              <p class="metric-value skeleton-target" id="metric-mmf-balance">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Principal</h3>
+              <p class="metric-value skeleton-target" id="metric-mmf-principal">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Gain</h3>
+              <p class="metric-value skeleton-target" id="metric-mmf-gain">RM 0.00</p>
+              <p class="metric-note"><span class="skeleton-target" id="metric-mmf-pct">0.00%</span> of principal</p>
+            </article>
+          </div>
+
+          <article class="card table-card">
+            <h3 class="card-title">Money market funds</h3>
+            <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="table-scroll"><table class="data-table" id="table-mmf"></table></div>
+          </article>
+        </section>
+
+        <!-- Crypto -->
+        <section class="tab-panel" id="panel-crypto" role="tabpanel" aria-labelledby="tab-crypto" data-panel="crypto" hidden>
+          <div class="metric-grid metric-grid-three">
+            <article class="metric-card metric-card-lead">
+              <h3 class="metric-label">Crypto market value</h3>
+              <p class="metric-value skeleton-target" id="metric-crypto-value">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Unrealised P/L</h3>
+              <p class="metric-value skeleton-target" id="metric-crypto-unrealised">RM 0.00</p>
+            </article>
+            <article class="metric-card">
+              <h3 class="metric-label">Realised P/L</h3>
+              <p class="metric-value skeleton-target" id="metric-crypto-realised">RM 0.00</p>
+            </article>
+          </div>
+
+          <div class="chart-grid">
+            <article class="card chart-card">
+              <h3 class="card-title">Luno holdings</h3>
+              <div class="chart-box">
+                <canvas id="chart-crypto-luno" role="img" aria-label="Luno holdings"></canvas>
+                <p class="chart-empty" hidden>No Luno crypto yet.</p>
+              </div>
+            </article>
+            <article class="card chart-card">
+              <h3 class="card-title">Pionex spot holdings</h3>
+              <div class="chart-box">
+                <canvas id="chart-crypto-pionex" role="img" aria-label="Pionex spot holdings"></canvas>
+                <p class="chart-empty" hidden>No Pionex crypto yet.</p>
+              </div>
+            </article>
+            <article class="card chart-card">
+              <h3 class="card-title">Combined crypto portfolio</h3>
+              <div class="chart-box">
+                <canvas id="chart-crypto-combined" role="img" aria-label="Combined crypto portfolio"></canvas>
+                <p class="chart-empty" hidden>No crypto yet.</p>
+              </div>
+            </article>
+          </div>
+
+          <article class="card table-card">
+            <h3 class="card-title">Asset details</h3>
+            <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            <div class="table-scroll"><table class="data-table" id="table-crypto"></table></div>
+          </article>
+        </section>
+      </main>
+
+      <button class="fab" type="button" data-action="add-transaction" aria-label="Add transaction">
+        <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+      </button>
+    </div>
+
+    <!-- Setup wizard (first launch) -->
+    <div class="overlay overlay-center" id="setup-wizard" role="dialog" aria-modal="true" aria-labelledby="setup-title" hidden>
+      <div class="overlay-panel">
+        <h2 class="overlay-title" id="setup-title">Connect your portfolio</h2>
+        <p class="overlay-text">These details stay in this browser. They are never saved in the code or on GitHub.</p>
+
+        <form class="form" id="setup-form" novalidate autocomplete="off">
+          <div class="field">
+            <label for="setup-url">Supabase project URL</label>
+            <input id="setup-url" type="url" inputmode="url" placeholder="https://your-project.supabase.co" autocapitalize="off" spellcheck="false" />
+            <p class="field-help">Supabase, Project Settings, API, Project URL.</p>
+          </div>
+          <div class="field">
+            <label for="setup-key">Supabase anon key</label>
+            <input id="setup-key" type="text" placeholder="Paste the public anon key" autocapitalize="off" spellcheck="false" />
+            <p class="field-help">Use the anon public key only. Never paste the service role key.</p>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="setup-pin">New 4-digit PIN</label>
+              <input id="setup-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="setup-pin-confirm">Repeat PIN</label>
+              <input id="setup-pin-confirm" type="password" inputmode="numeric" maxlength="4" autocomplete="off" />
+            </div>
+          </div>
+          <p class="form-error" id="setup-error" role="alert" hidden></p>
+          <button class="button button-primary button-block" type="submit" id="setup-submit">Save and continue</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Lock screen -->
+    <div class="overlay overlay-fullscreen" id="lock-screen" role="dialog" aria-modal="true" aria-labelledby="lock-title" hidden>
+      <div class="lock-panel">
+        <img class="brand-mark brand-mark-large" src="./assets/icons/icon.svg" alt="" width="56" height="56" />
+        <h2 class="lock-title" id="lock-title">Portfolio locked</h2>
+        <p class="lock-message" id="lock-message" role="status">Enter your PIN.</p>
+
+        <div class="pin-dots" id="pin-dots" aria-hidden="true">
+          <span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span>
+        </div>
+
+        <div class="keypad" id="lock-keypad">
+          <button class="keypad-key" type="button" data-key="1">1</button>
+          <button class="keypad-key" type="button" data-key="2">2</button>
+          <button class="keypad-key" type="button" data-key="3">3</button>
+          <button class="keypad-key" type="button" data-key="4">4</button>
+          <button class="keypad-key" type="button" data-key="5">5</button>
+          <button class="keypad-key" type="button" data-key="6">6</button>
+          <button class="keypad-key" type="button" data-key="7">7</button>
+          <button class="keypad-key" type="button" data-key="8">8</button>
+          <button class="keypad-key" type="button" data-key="9">9</button>
+          <span class="keypad-spacer" aria-hidden="true"></span>
+          <button class="keypad-key" type="button" data-key="0">0</button>
+          <button class="keypad-key keypad-key-quiet" type="button" data-key="delete" aria-label="Delete last digit">
+            <svg class="icon" aria-hidden="true"><use href="#icon-backspace"></use></svg>
+          </button>
+        </div>
+
+        <label class="checkbox">
+          <input type="checkbox" id="lock-remember" />
+          <span>Remember this device</span>
+        </label>
+        <button class="button button-quiet" type="button" id="lock-reset">Reset credentials</button>
+      </div>
+    </div>
+
+    <!-- Transaction drawer -->
+    <div class="overlay overlay-drawer" id="transaction-drawer" role="dialog" aria-modal="true" aria-labelledby="transaction-title" hidden>
+      <div class="overlay-panel">
+        <div class="drawer-header">
+          <h2 class="overlay-title" id="transaction-title">Add transaction</h2>
+          <button class="button button-icon" type="button" data-overlay-close aria-label="Close">
+            <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+
+        <form class="form" id="transaction-form" novalidate autocomplete="off">
+          <fieldset class="segmented">
+            <legend class="visually-hidden">Action</legend>
+            <input type="radio" name="action" id="transaction-action-buy" value="buy" checked />
+            <label for="transaction-action-buy">Buy / Deposit Cash</label>
+            <input type="radio" name="action" id="transaction-action-sell" value="sell" />
+            <label for="transaction-action-sell">Sell / Withdraw Cash</label>
+          </fieldset>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="transaction-broker">Broker</label>
+              <select id="transaction-broker"></select>
+            </div>
+            <div class="field">
+              <label for="transaction-asset">Asset</label>
+              <select id="transaction-asset"></select>
+            </div>
+          </div>
+          <p class="field-help" id="transaction-holding"></p>
+
+          <div class="field">
+            <label for="transaction-quantity" id="transaction-quantity-label">Quantity</label>
+            <input id="transaction-quantity" type="number" inputmode="decimal" step="any" min="0" placeholder="0.000000" />
+          </div>
+          <div class="field" id="transaction-price-field">
+            <label for="transaction-price" id="transaction-price-label">Price per unit (RM)</label>
+            <input id="transaction-price" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+          </div>
+
+          <dl class="preview" id="transaction-preview" hidden></dl>
+          <p class="form-error" id="transaction-error" role="alert" hidden></p>
+          <button class="button button-primary button-block" type="submit" id="transaction-submit">Save transaction</button>
+        </form>
+      </div>
+    </div>
+
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+  </body>
+</html>
