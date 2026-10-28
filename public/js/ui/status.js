@@ -26,6 +26,11 @@ function buildNotices(state, holdings) {
       `Supabase cannot be reached (${dataInfo.errorMessage}). You are viewing the copy saved at ${formatTime(dataInfo.savedAt)}. Adding transactions is paused.`,
     );
   }
+  if (dataInfo && !dataInfo.isOffline && state.positions.length === 0) {
+    notices.push(
+      'Supabase returned no rows from the table "portfolio". If the table has data, a Row Level Security policy is blocking the read (see the README). Otherwise, choose Add transaction to enter your first holding.',
+    );
+  }
   if (priceInfo?.status === 'failed') {
     notices.push(`Live prices are unavailable (${priceInfo.errorMessage}). The last saved prices are used.`);
   }

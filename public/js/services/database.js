@@ -7,13 +7,28 @@ import { localStore } from './storage.js';
 
 let client = null;
 
+// One client per URL and key. Creating several on the same page makes Supabase warn
+// about "multiple GoTrueClient instances".
+const clientCache = new Map();
+
 function createDatabaseClient({ databaseUrl, databaseKey }) {
   if (!window.supabase?.createClient) {
     throw new Error('The Supabase library did not load. Check your internet connection and reload.');
   }
-  return window.supabase.createClient(databaseUrl, databaseKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+
+  const url = databaseUrl.trim().replace(/\/+$/, '');
+  const key = databaseKey.trim();
+  const cacheKey = `${url}|${key}`;
+
+  if (!clientCache.has(cacheKey)) {
+    clientCache.set(
+      cacheKey,
+      window.supabase.createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      }),
+    );
+  }
+  return clientCache.get(cacheKey);
 }
 
 function getClient() {
