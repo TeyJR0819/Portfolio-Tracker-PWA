@@ -16,7 +16,7 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 ## Project structure
 
 ```
-public/                 The website. Cloudflare publishes this folder.
+public/                 The website. Cloudflare serves this folder as static files.
   index.html            Page structure, tabs, dialogs, library tags
   manifest.json         Install details for the home screen
   sw.js                 Service worker (offline app shell)
@@ -31,9 +31,10 @@ public/                 The website. Cloudflare publishes this folder.
     services/           Supabase, prices, PIN and storage
     ui/                 Screens, tables, charts, tabs, dialogs
       views/            One file per tab
-functions/api/stocks.js Cloudflare function: stock quotes and exchange rates
+src/worker.js           Cloudflare Worker entry point (routes /api/*)
+src/stocks.js           Stock quotes and exchange rates (Yahoo Finance, Finnhub)
 tests/                  Unit tests
-wrangler.toml           Cloudflare Pages settings
+wrangler.toml           Cloudflare settings
 ```
 
 ## Coding conventions
@@ -75,33 +76,30 @@ The PIN only locks the screen on one device. Real protection comes from keeping 
 
 ## Run locally
 
-Use Cloudflare's local runtime, so the stock function works too:
+Use Cloudflare's local runtime, so the stock endpoint works too:
 
 ```
-npx wrangler pages dev public
+npx wrangler dev
 ```
 
 Run the tests with `npm test`.
 
-## Deploy with Cloudflare Pages
+## Deploy with Cloudflare
 
-1. Open https://dash.cloudflare.com and choose **Workers & Pages > Create > Pages > Connect to Git**.
+The repository is a Cloudflare Worker with static assets. Cloudflare serves `public/` and runs `src/worker.js` for `/api/*`.
+
+1. Open https://dash.cloudflare.com and choose **Workers & Pages > Create application > Import a repository**.
 2. Select the `Portfolio-Tracker-PWA` repository.
-3. Use these build settings, then choose **Save and Deploy**:
-   - Framework preset: `None`
+3. Use these settings, then choose **Deploy**:
    - Build command: leave empty
-   - Build output directory: `public`
-4. After about one minute, the site is live at `https://<project-name>.pages.dev`. Every push to `main` deploys again automatically.
-5. Optional backup for stock prices: open the project, then **Settings > Variables and Secrets**, add the secret `FINNHUB_API_KEY` (a free key from https://finnhub.io), and deploy again.
+   - Deploy command: `npx wrangler deploy`
+   - The project name must match `name` in `wrangler.toml` (`portfolio-tracker-pwa`).
+4. After about one minute, the site is live at `https://portfolio-tracker-pwa.<your-subdomain>.workers.dev`. Every push to `main` deploys again automatically.
+5. Optional backup for stock prices: open the project, then **Settings > Variables and secrets**, add the secret `FINNHUB_API_KEY` (a free key from https://finnhub.io), and deploy again.
 
-Deploy from the command line instead with:
+Deploy from the command line instead with `npx wrangler login`, then `npx wrangler deploy`.
 
-```
-npx wrangler login
-npx wrangler pages deploy public --project-name portfolio-tracker-pwa
-```
-
-GitHub Pages cannot run the stock function. Use the Cloudflare address.
+GitHub Pages cannot run the stock endpoint. Use the Cloudflare address.
 
 ## Install on a phone
 
@@ -141,8 +139,9 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 | "Supabase blocked this request" | Run the policies in the Supabase section above. |
 | "Supabase rejected the anon key" | Use **Reset credentials** on the lock screen and enter the key again. |
 | A price shows as an estimate | The price service has no price for that asset. It is valued at average cost. Check `coinId` or `stockSymbol` in `public/js/config.js`. |
-| "Stock prices: status 404" | The site is not running on Cloudflare Pages, or the `functions` folder was not deployed. |
+| "Stock prices: status 404" | The site is not running on Cloudflare, or `src/worker.js` was not deployed. |
 | "Stock prices: status 502" | Yahoo Finance refused the request. Add the `FINNHUB_API_KEY` secret as a backup, or try again later. |
 | "The USD to RM rate is not available" | Press Refresh on the dashboard and try again. |
 | SPYL has no price | `SPYL.L` is the London listing. If you hold a different listing, change `stockSymbol` for SPYL in `public/js/config.js`. |
 | The old version appears after a deploy | Raise `CACHE_VERSION` in `public/sw.js`, then reload twice. |
+| Deploy fails with "Missing entry-point" | `wrangler.toml` must contain `main` and an `[assets]` section, as in this repository. Do not add `pages_build_output_dir`. |

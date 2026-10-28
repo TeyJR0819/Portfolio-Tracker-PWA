@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { getStockQuotes, onRequestGet } from '../functions/api/stocks.js';
+import { getStockQuotes, handleStocksRequest } from '../src/stocks.js';
 
 function yahooAnswer(price, currency) {
   return { ok: true, json: async () => ({ chart: { result: [{ meta: { regularMarketPrice: price, currency } }] } }) };
@@ -65,7 +65,7 @@ test('a failing symbol is reported without breaking the others', async () => {
 });
 
 test('the endpoint rejects missing, invalid and too many symbols', async () => {
-  const ask = (query) => onRequestGet({ request: new Request(`https://example.com/api/stocks${query}`), env: {} });
+  const ask = (query) => handleStocksRequest({ request: new Request(`https://example.com/api/stocks${query}`), env: {} });
   assert.equal((await ask('')).status, 400);
   assert.equal((await ask('?symbols=VOO;DROP')).status, 400);
   assert.equal((await ask('?symbols=A,B,C,D,E,F,G,H,I,J,K')).status, 400);

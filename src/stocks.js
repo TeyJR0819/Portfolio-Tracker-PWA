@@ -1,4 +1,4 @@
-// Cloudflare Pages Function: GET /api/stocks?symbols=VOO,QQQM,SPYL.L
+// Cloudflare Worker handler: GET /api/stocks?symbols=VOO,QQQM,SPYL.L
 //
 // Browsers cannot call Yahoo Finance directly (CORS), and a Finnhub key must stay secret.
 // This function runs on Cloudflare, fetches the quotes and answers with:
@@ -92,7 +92,7 @@ export async function getStockQuotes(symbols, { fetchImpl = fetch, finnhubToken 
   return { quotes, fx, errors };
 }
 
-export async function onRequestGet({ request, env }) {
+export async function handleStocksRequest({ request, env }) {
   const requested = new URL(request.url).searchParams.get('symbols') ?? '';
   const symbols = [...new Set(requested.split(',').map((item) => item.trim().toUpperCase()))].filter(Boolean);
 

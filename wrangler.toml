@@ -1,4 +1,10 @@
-# Cloudflare Pages settings. Used by "npx wrangler pages deploy" and by Git-connected builds.
+# Cloudflare settings for "npx wrangler deploy".
+# The name must match the Worker name shown in the Cloudflare dashboard.
 name = "portfolio-tracker-pwa"
+main = "src/worker.js"
 compatibility_date = "2025-01-01"
-pages_build_output_dir = "public"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
