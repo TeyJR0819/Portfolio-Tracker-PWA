@@ -7,6 +7,7 @@ export const STORAGE_KEYS = Object.freeze({
   priceCache: 'portfolio.priceCache',
   positionsSnapshot: 'portfolio.positionsSnapshot',
   displayCurrency: 'portfolio.displayCurrency',
+  authSession: 'portfolio.auth', // The Supabase sign-in session. Supabase writes it, we only clear it.
 });
 
 export const DATABASE_TABLE = 'portfolio';

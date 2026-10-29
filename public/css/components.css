@@ -668,3 +668,13 @@
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
 }
+
+/* A short notice inside a dialog, for example "Your sign-in has expired." */
+.notice-inline {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  border-radius: var(--radius-medium);
+  color: var(--color-warning);
+  font-size: var(--text-small);
+}

@@ -19,7 +19,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Portfolio" />
-    <link rel="manifest" href="./manifest.json" />
+    <link rel="manifest" href="./manifest.json" crossorigin="use-credentials" />
     <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
 
@@ -352,6 +352,29 @@
       </div>
     </div>
 
+    <!-- Sign-in (Supabase account of the owner) -->
+    <div class="overlay overlay-center" id="signin-screen" role="dialog" aria-modal="true" aria-labelledby="signin-title" hidden>
+      <div class="overlay-panel">
+        <h2 class="overlay-title" id="signin-title">Sign in</h2>
+        <p class="overlay-text">Use the email and password of the account you created in Supabase, Authentication, Users.</p>
+        <p class="notice-inline" id="signin-message" role="status" hidden></p>
+
+        <form class="form" id="signin-form" novalidate>
+          <div class="field">
+            <label for="signin-email">Email</label>
+            <input id="signin-email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="signin-password">Password</label>
+            <input id="signin-password" type="password" autocomplete="current-password" />
+          </div>
+          <p class="form-error" id="signin-error" role="alert" hidden></p>
+          <button class="button button-primary button-block" type="submit" id="signin-submit">Sign in</button>
+        </form>
+        <button class="button button-quiet" type="button" id="signin-reset">Reset credentials</button>
+      </div>
+    </div>
+
     <!-- Lock screen -->
     <div class="overlay overlay-fullscreen" id="lock-screen" role="dialog" aria-modal="true" aria-labelledby="lock-title" hidden>
       <div class="lock-panel">
@@ -384,6 +407,7 @@
           <input type="checkbox" id="lock-remember" />
           <span>Remember this device</span>
         </label>
+        <button class="button button-quiet" type="button" id="lock-signout">Sign out</button>
         <button class="button button-quiet" type="button" id="lock-reset">Reset credentials</button>
       </div>
     </div>

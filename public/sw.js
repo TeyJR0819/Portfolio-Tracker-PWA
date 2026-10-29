@@ -3,7 +3,7 @@
 // To release an update: change CACHE_VERSION below. Phones then fetch fresh files.
 // Live data (Supabase and CoinGecko) is never cached here; the app handles that itself.
 
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `portfolio-shell-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -38,6 +38,7 @@ const APP_FILES = [
   './js/ui/metrics.js',
   './js/ui/overlay.js',
   './js/ui/setup-wizard.js',
+  './js/ui/signin-screen.js',
   './js/ui/status.js',
   './js/ui/table.js',
   './js/ui/tabs.js',

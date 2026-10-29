@@ -1,7 +1,8 @@
 // PIN lock screen with animated dots, an on-screen keypad and keyboard support.
 
 import { PIN_LOCKOUT_SECONDS, PIN_MAX_ATTEMPTS } from '../config.js';
-import { clearAllSavedData, startSession, verifyPin } from '../services/auth.js';
+import { clearAllSavedData, endSession, getCredentials, startSession, verifyPin } from '../services/auth.js';
+import { connectDatabase, signOut } from '../services/database.js';
 import { byId, setText } from './dom.js';
 import { createOverlay } from './overlay.js';
 
@@ -114,6 +115,17 @@ export function initLockScreen({ onUnlock }) {
     if (!key) return;
     if (key.dataset.key === 'delete') removeDigit();
     else addDigit(key.dataset.key);
+  });
+
+  // Ends the sign-in on this device. The next unlock asks for the email and password again.
+  byId('lock-signout').addEventListener('click', async () => {
+    const credentials = getCredentials();
+    if (credentials) {
+      connectDatabase(credentials);
+      await signOut();
+    }
+    endSession();
+    window.location.reload();
   });
 
   byId('lock-reset').addEventListener('click', () => {

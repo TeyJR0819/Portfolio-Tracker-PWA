@@ -24,7 +24,13 @@ function createDatabaseClient({ databaseUrl, databaseKey }) {
     clientCache.set(
       cacheKey,
       window.supabase.createClient(url, key, {
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        // The sign-in session is kept so the person does not log in again after every visit.
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          storageKey: STORAGE_KEYS.authSession,
+        },
       }),
     );
   }
@@ -107,6 +113,18 @@ function toTransactionRow(record) {
   };
 }
 
+// True when the sign-in session is missing or expired (not when the anon key is wrong).
+function isAuthError(error) {
+  return error?.code === 'PGRST301' || /jwt expired|jwt is expired/i.test(String(error?.message ?? ''));
+}
+
+// An Error whose message a person can read. isAuthError tells the app to ask for the sign-in again.
+function toFailure(error) {
+  const failure = new Error(describeDatabaseError(error));
+  failure.isAuthError = isAuthError(error);
+  return failure;
+}
+
 // Turns a technical error into a sentence a person can act on.
 export function describeDatabaseError(error) {
   const message = String(error?.message ?? error ?? '');
@@ -114,6 +132,9 @@ export function describeDatabaseError(error) {
 
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
     return 'Cannot reach Supabase. Check your internet connection and the project URL.';
+  }
+  if (isAuthError(error)) {
+    return 'Your sign-in has expired. Sign in again.';
   }
   if (/invalid api key|jwt/i.test(message) || code === '401') {
     return 'Supabase rejected the anon key. Reset the credentials and enter the key again.';
@@ -132,6 +153,40 @@ export function describeDatabaseError(error) {
 
 export function connectDatabase(credentials) {
   client = createDatabaseClient(credentials);
+}
+
+// ---------- Sign-in ----------
+// The database only answers a signed-in owner (see the Row Level Security policies in the README).
+
+function describeAuthError(error) {
+  const message = String(error?.message ?? '');
+  if (/invalid login credentials/i.test(message)) return 'The email or password is not correct.';
+  if (error?.status === 429 || /rate limit|too many/i.test(message)) return 'Too many attempts. Wait a few minutes and try again.';
+  if (/email not confirmed/i.test(message)) return 'This email is not confirmed. Confirm it in Supabase, Authentication, Users.';
+  if (/failed to fetch|networkerror|load failed/i.test(message)) return 'Cannot reach Supabase. Check your internet connection.';
+  return message || 'Sign-in failed.';
+}
+
+// Returns the current session, or null when the person is not signed in.
+export async function getSession() {
+  const { data, error } = await getClient().auth.getSession();
+  return error ? null : data.session;
+}
+
+export async function signIn(email, password) {
+  const { error } = await getClient().auth.signInWithPassword({ email, password });
+  if (error) throw new Error(describeAuthError(error));
+}
+
+// Ends the sign-in on this device and removes the saved copy of the data.
+export async function signOut() {
+  try {
+    await getClient().auth.signOut({ scope: 'local' });
+  } catch {
+    // The local session is removed below even when the server cannot be reached.
+  }
+  localStore.remove(STORAGE_KEYS.authSession);
+  localStore.remove(STORAGE_KEYS.positionsSnapshot);
 }
 
 // Used by the setup wizard to check the details before saving them.
@@ -161,6 +216,9 @@ export async function loadPositions() {
     localStore.setJson(STORAGE_KEYS.positionsSnapshot, { savedAt, positions });
     return { positions, isOffline: false, savedAt, errorMessage: '' };
   } catch (error) {
+    // An expired sign-in must never fall back to the saved copy.
+    if (isAuthError(error)) throw toFailure(error);
+
     const snapshot = localStore.getJson(STORAGE_KEYS.positionsSnapshot);
     if (snapshot?.positions) {
       return {
@@ -170,7 +228,7 @@ export async function loadPositions() {
         errorMessage: describeDatabaseError(error),
       };
     }
-    throw new Error(describeDatabaseError(error));
+    throw toFailure(error);
   }
 }
 
@@ -188,7 +246,7 @@ async function insertPosition(position) {
       .single();
   }
 
-  if (result.error) throw new Error(describeDatabaseError(result.error));
+  if (result.error) throw toFailure(result.error);
   return toPosition(result.data);
 }
 
@@ -201,7 +259,7 @@ async function updatePosition(position) {
     .select()
     .single();
 
-  if (error) throw new Error(describeDatabaseError(error));
+  if (error) throw toFailure(error);
   return toPosition(data);
 }
 

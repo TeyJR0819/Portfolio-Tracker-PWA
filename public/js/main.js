@@ -14,7 +14,7 @@ import {
   hasCredentials,
   isSessionActive,
 } from './services/auth.js';
-import { cachePositions, connectDatabase, loadPositions, loadTransactions } from './services/database.js';
+import { cachePositions, connectDatabase, getSession, loadPositions, loadTransactions } from './services/database.js';
 import { loadMarketPrices } from './services/prices.js';
 import { registerServiceWorker } from './services/service-worker-registration.js';
 import { setMoneyUnit } from './logic/format.js';
@@ -35,6 +35,7 @@ import { initCurrencyToggle, renderCurrencyToggle } from './ui/currency-toggle.j
 import { initEntryDrawer } from './ui/entry-drawer.js';
 import { initLockScreen } from './ui/lock-screen.js';
 import { initSetupWizard } from './ui/setup-wizard.js';
+import { initSigninScreen } from './ui/signin-screen.js';
 import {
   finishInitialLoad,
   hideDataError,
@@ -50,6 +51,7 @@ import { initTransactionsView } from './ui/views/transactions-view.js';
 
 let lockScreen = null;
 let setupWizard = null;
+let signinScreen = null;
 let entryDrawer = null;
 let tabs = null;
 let refreshTimer = null;
@@ -98,6 +100,13 @@ async function refreshAll({ forcePrices = false } = {}) {
       transactionsError: historyResult.errorMessage,
     };
 
+    if (dataResult.failure?.isAuthError) {
+      stopAutoRefresh();
+      byId('app').hidden = true;
+      signinScreen.show(dataResult.failure.message);
+      return;
+    }
+
     if (dataResult.failure) {
       // Keep what is already on screen when a later refresh fails.
       if (getState().positions.length === 0) showDataError(dataResult.failure.message);
@@ -135,12 +144,23 @@ function stopAutoRefresh() {
 
 // ---------- Screens ----------
 
-function startDashboard() {
+// The dashboard opens only for a signed-in owner. Without a session, the sign-in screen comes first.
+// Offline, an expired session cannot be renewed, so a device that has signed in before may still
+// open the saved copy.
+async function startDashboard() {
+  connectDatabase(getCredentials());
+
+  const session = await getSession().catch(() => null);
+  const hasSavedSignIn = Boolean(localStore.getText(STORAGE_KEYS.authSession));
+  if (!session && !(hasSavedSignIn && !navigator.onLine)) {
+    byId('app').hidden = true;
+    signinScreen.show();
+    return;
+  }
+
   resetState();
   document.body.classList.add('is-initial-load');
   byId('app').hidden = false;
-
-  connectDatabase(getCredentials());
   tabs.select(getState().activeTab);
   refreshAll().then(startAutoRefresh);
 }
@@ -217,6 +237,7 @@ function boot() {
   }
 
   setupWizard = initSetupWizard({ onComplete: startDashboard });
+  signinScreen = initSigninScreen({ onSignedIn: startDashboard });
   lockScreen = initLockScreen({ onUnlock: startDashboard });
   entryDrawer = initEntryDrawer({ onSaved: handleEntrySaved });
   tabs = initTabs({

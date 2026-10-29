@@ -64,18 +64,15 @@ create table if not exists portfolio (
 );
 ```
 
-3. Allow the app to read and write the table:
+3. Turn on Row Level Security, so nobody can read the table until the owner-only policies exist (see Secure access):
 
 ```sql
 alter table portfolio enable row level security;
-create policy "app can read"   on portfolio for select to anon using (true);
-create policy "app can insert" on portfolio for insert to anon with check (true);
-create policy "app can update" on portfolio for update to anon using (true) with check (true);
 ```
 
 4. Open **Project Settings > API**. Copy the **Project URL** and the **anon public** key. Never use the `service_role` key.
 
-The PIN only locks the screen on one device. Real protection comes from keeping the project URL and anon key private.
+The anon key is public by design. The protection is the sign-in plus the policies in Secure access. The PIN only locks the screen on one device.
 
 ## Run locally
 
@@ -136,11 +133,52 @@ create table if not exists transactions (
 );
 
 alter table transactions enable row level security;
-create policy "app can read history" on transactions for select to anon using (true);
-create policy "app can add history"  on transactions for insert to anon with check (true);
 ```
 
 Without this table, the dashboard still works, but the Transactions page stays empty and shows a reminder.
+
+## Secure access
+
+The database answers only you. Follow these steps in this order.
+
+1. **Create your account.** In Supabase, open **Authentication > Users > Add user > Create new user**. Enter your email and a long, unique password, and tick **Auto Confirm User**. Copy the **User UID** shown in the list.
+2. **Close the front door.** Open **Authentication > Sign In / Providers** and turn off **Allow new users to sign up**.
+3. **Deploy this version of the app** and sign in once. The app asks for the email and password after the PIN screen.
+4. **Switch the policies to owner-only.** Open the SQL Editor, replace `PASTE-YOUR-USER-ID-HERE` with your User UID, and run:
+
+```sql
+drop policy if exists "app can read"         on portfolio;
+drop policy if exists "app can insert"       on portfolio;
+drop policy if exists "app can update"       on portfolio;
+drop policy if exists "app can read history" on transactions;
+drop policy if exists "app can add history"  on transactions;
+drop policy if exists "owner reads"          on portfolio;
+drop policy if exists "owner inserts"        on portfolio;
+drop policy if exists "owner updates"        on portfolio;
+drop policy if exists "owner reads history"  on transactions;
+drop policy if exists "owner adds history"   on transactions;
+
+do $$
+declare
+  owner_id constant uuid := 'PASTE-YOUR-USER-ID-HERE';
+begin
+  execute format('create policy "owner reads"   on portfolio for select to authenticated using (auth.uid() = %L)', owner_id);
+  execute format('create policy "owner inserts" on portfolio for insert to authenticated with check (auth.uid() = %L)', owner_id);
+  execute format('create policy "owner updates" on portfolio for update to authenticated using (auth.uid() = %L) with check (auth.uid() = %L)', owner_id, owner_id);
+  execute format('create policy "owner reads history" on transactions for select to authenticated using (auth.uid() = %L)', owner_id);
+  execute format('create policy "owner adds history"  on transactions for insert to authenticated with check (auth.uid() = %L)', owner_id);
+end $$;
+```
+
+After this, the public key alone reads and writes nothing. Another Supabase account would not work either, because the policies name your User UID.
+
+5. **Protect the website with Cloudflare Access.** In the Cloudflare dashboard, open **Zero Trust** (choose the free plan the first time), then **Access > Applications > Add an application > Self-hosted**. Enter the address of your site, add a policy with the action **Allow** and the rule **Emails** set to your own email, and choose **One-time PIN** as the login method. Set the session length as long as allowed, so the phone app does not ask often. Menu names can differ slightly between versions.
+6. **Protect the repository.** In GitHub, open **Settings > Code security** and turn on secret scanning and push protection. Turn on two-factor authentication for GitHub, Cloudflare and Supabase.
+
+Keep in mind:
+- Do not turn on Supabase multi-factor authentication yet. The app cannot answer that challenge.
+- The sign-in session is stored in this browser. **Sign out** on the lock screen removes it and the saved copy of the data.
+- Never put a secret in the repository, in `wrangler.toml` or in the browser. Future broker keys will live only as Cloudflare secrets.
 
 ## Entries
 
