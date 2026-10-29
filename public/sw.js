@@ -3,7 +3,7 @@
 // To release an update: change CACHE_VERSION below. Phones then fetch fresh files.
 // Live data (Supabase and CoinGecko) is never cached here; the app handles that itself.
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME = `portfolio-shell-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -21,6 +21,7 @@ const APP_FILES = [
   './js/logic/catalog.js',
   './js/logic/export-csv.js',
   './js/logic/format.js',
+  './js/logic/ledger.js',
   './js/logic/quotes.js',
   './js/services/auth.js',
   './js/services/database.js',
@@ -29,8 +30,10 @@ const APP_FILES = [
   './js/services/storage.js',
   './js/ui/animations.js',
   './js/ui/charts.js',
+  './js/ui/currency-toggle.js',
   './js/ui/columns.js',
   './js/ui/dom.js',
+  './js/ui/entry-drawer.js',
   './js/ui/lock-screen.js',
   './js/ui/metrics.js',
   './js/ui/overlay.js',
@@ -39,11 +42,11 @@ const APP_FILES = [
   './js/ui/table.js',
   './js/ui/tabs.js',
   './js/ui/toast.js',
-  './js/ui/transaction-drawer.js',
   './js/ui/views/index.js',
   './js/ui/views/summary-view.js',
   './js/ui/views/cash-view.js',
   './js/ui/views/stocks-view.js',
+  './js/ui/views/transactions-view.js',
   './js/ui/views/mmf-view.js',
   './js/ui/views/crypto-view.js',
   './assets/icons/icon.svg',

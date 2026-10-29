@@ -4,13 +4,16 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 
 ## Features
 
-- Five tabs: Summary, Cash, Stocks, MMF and Crypto.
+- Six tabs: Summary, Cash, Stocks, MMF, Crypto and Transactions.
+- A switch in the header shows every amount in RM or in USD.
 - Live MYR prices, cached for 120 seconds, with fallback to the last known price and then to average cost.
   - Crypto: CoinGecko.
   - Stocks (VOO, QQQM, SPYL): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
 - Brokers: Luno, Pionex, Moomoo, IBKR and Bank. IBKR holds the same stocks as Moomoo.
-- Prices for IBKR stocks are entered in USD, and prices for Pionex crypto in USDT. The app converts them to RM when it saves.
-- Buy and sell transactions with weighted-average cost and realised profit or loss.
+- Cash accounts for Bank, Luno, Pionex (USDT), Moomoo and IBKR (USD), plus the Moomoo MMF.
+- One "Add entry" form for every kind of entry (see Entries below), with optional fees and a note.
+- Weighted-average cost, realised profit or loss, and the cost per unit calculated from the amount paid.
+- A Transactions page that lists every entry.
 - First-time setup wizard, PIN lock screen, CSV export and offline app shell.
 
 ## Project structure
@@ -106,15 +109,66 @@ GitHub Pages cannot run the stock endpoint. Use the Cloudflare address.
 - **iPhone (Safari):** open the address, tap **Share**, then **Add to Home Screen**.
 - **Android (Chrome):** open the address, tap the menu, then **Install app**.
 
+## Transactions table
+
+The Transactions page needs a second table. Run this once in the Supabase **SQL Editor**:
+
+```sql
+create table if not exists transactions (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  trade_date date not null,
+  kind text not null,
+  broker text not null default '',
+  asset text not null default '',
+  qty numeric not null default 0,
+  price numeric not null default 0,
+  currency text not null default 'MYR',
+  fee numeric not null default 0,
+  rate numeric not null default 1,
+  total_myr numeric not null default 0,
+  from_account text not null default '',
+  to_account text not null default '',
+  amount_from numeric not null default 0,
+  amount_to numeric not null default 0,
+  realised_pl numeric not null default 0,
+  note text not null default ''
+);
+
+alter table transactions enable row level security;
+create policy "app can read history" on transactions for select to anon using (true);
+create policy "app can add history"  on transactions for insert to anon with check (true);
+```
+
+Without this table, the dashboard still works, but the Transactions page stays empty and shows a reminder.
+
+## Entries
+
+Choose **Add entry** and pick a type. Every entry can carry a date and a note.
+
+| Type | What it does |
+| --- | --- |
+| Buy | Adds the asset. Takes the amount paid, plus the fee, out of the broker's cash. |
+| Sell | Removes the asset. Adds the amount received, minus the fee, to the broker's cash. |
+| Transfer between accounts | Moves cash from one account to another. The received amount is filled in at today's rate and can be changed. |
+| Deposit from outside | Adds money from outside the portfolio, such as income, to one account. |
+| Cash out to outside | Takes money out of the portfolio, such as spending, from one account. |
+| MMF gain | Adds a gain to the money market fund balance. The principal stays the same, so the gain shows as profit. |
+| Adjust balance | Sets an account to the balance that the bank or broker shows. |
+
+For a buy or a sell, enter either the price per unit or the total amount. With the total, the app works out the cost per unit. The option "Deduct from cash" can be switched off to record an old trade without touching cash.
+
 ## Currency rules
 
-| Broker | Asset type | Price is entered in | Saved in |
-| --- | --- | --- | --- |
-| IBKR | Stocks | USD | RM |
-| Pionex | Crypto | USDT | RM |
-| Every other case | Any | RM | RM |
+| Broker | Prices, fees and cash are entered in | Saved in |
+| --- | --- | --- |
+| IBKR (stocks and IBKR Cash) | USD | RM |
+| Pionex (crypto and Pionex Cash) | USDT | RM |
+| Luno, Moomoo and Bank | RM | RM |
 
-The drawer shows the total in USD or USDT, the exchange rate used, and the total in RM. The cost basis is fixed at the rate of the day of the transaction. The USD rate comes from Yahoo Finance. The USDT rate comes from CoinGecko. If only one of them is available, it stands in for the other.
+The form shows the exchange rate used. The cost basis is fixed at the rate of the day of the entry. The USD rate comes from Yahoo Finance. The USDT rate comes from CoinGecko. If only one of them is available, it stands in for the other. USD and USDT cash balances are valued at the current rate, so their profit or loss includes the exchange-rate effect. This effect becomes realised when the cash is moved or spent.
+
+The switch in the header only changes how amounts are shown. The database always holds RM costs.
 
 ## First launch
 

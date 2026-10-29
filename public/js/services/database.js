@@ -2,7 +2,7 @@
 // Database columns use snake_case; the rest of the app uses camelCase.
 // The two functions toPosition and toDatabaseRow translate between them.
 
-import { DATABASE_TABLE, STORAGE_KEYS } from '../config.js';
+import { DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
 import { localStore } from './storage.js';
 
 let client = null;
@@ -61,6 +61,49 @@ function toDatabaseRow(position) {
     qty: position.qty,
     cost_myr: position.costMyr,
     realised_pl: position.realisedPl,
+  };
+}
+
+function toTransaction(row) {
+  return {
+    id: row.id,
+    tradeDate: row.trade_date,
+    kind: row.kind,
+    broker: row.broker ?? '',
+    asset: row.asset ?? '',
+    qty: toNumber(row.qty),
+    price: toNumber(row.price),
+    currency: row.currency ?? 'MYR',
+    fee: toNumber(row.fee),
+    rate: toNumber(row.rate) || 1,
+    totalMyr: toNumber(row.total_myr),
+    fromAccount: row.from_account ?? '',
+    toAccount: row.to_account ?? '',
+    amountFrom: toNumber(row.amount_from),
+    amountTo: toNumber(row.amount_to),
+    realisedPl: toNumber(row.realised_pl),
+    note: row.note ?? '',
+  };
+}
+
+function toTransactionRow(record) {
+  return {
+    trade_date: record.tradeDate,
+    kind: record.kind,
+    broker: record.broker,
+    asset: record.asset,
+    qty: record.qty,
+    price: record.price,
+    currency: record.currency,
+    fee: record.fee,
+    rate: record.rate,
+    total_myr: record.totalMyr,
+    from_account: record.fromAccount,
+    to_account: record.toAccount,
+    amount_from: record.amountFrom,
+    amount_to: record.amountTo,
+    realised_pl: record.realisedPl,
+    note: record.note,
   };
 }
 
@@ -165,4 +208,82 @@ async function updatePosition(position) {
 // Creates the row when the position is new, otherwise updates it. Returns the saved position.
 export function savePosition(position) {
   return position.id === null || position.id === undefined ? insertPosition(position) : updatePosition(position);
+}
+
+// ---------- Transactions (the history shown on the Transactions page) ----------
+
+function describeTransactionsError(error) {
+  const message = String(error?.message ?? error ?? '');
+  if (error?.code === 'PGRST205' || error?.code === '42P01' || /could not find the table/i.test(message)) {
+    return 'The "transactions" table does not exist yet. Run the SQL in the README (section "Transactions table"), then press Refresh.';
+  }
+  if (error?.code === '42501' || /row-level security/i.test(message)) {
+    return 'Supabase blocked the "transactions" table. Add the policies from the README (section "Transactions table").';
+  }
+  return describeDatabaseError(error);
+}
+
+// Never throws: the dashboard still works when the history cannot be loaded.
+export async function loadTransactions() {
+  try {
+    const { data, error } = await getClient()
+      .from(TRANSACTIONS_TABLE)
+      .select('*')
+      .order('trade_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(TRANSACTIONS_LIMIT);
+    if (error) throw error;
+    return { transactions: data.map(toTransaction), errorMessage: '' };
+  } catch (error) {
+    return { transactions: [], errorMessage: describeTransactionsError(error) };
+  }
+}
+
+async function insertTransaction(record) {
+  const { data, error } = await getClient().from(TRANSACTIONS_TABLE).insert(toTransactionRow(record)).select().single();
+  if (error) throw error;
+  return toTransaction(data);
+}
+
+// Puts balances back to how they were before a failed entry. A row that was created by the
+// entry is set to zero, because the app has no permission to delete rows.
+async function restorePositions(savedSteps) {
+  try {
+    for (const { before, saved } of [...savedSteps].reverse()) {
+      const original = before.id === null ? { ...before, id: saved.id, qty: 0, costMyr: 0, realisedPl: 0 } : before;
+      await updatePosition(original);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Saves every changed balance and then the history line.
+//   changes: [{ before, after }] from the ledger
+// If a balance fails to save, the earlier ones are restored, so a buy never leaves the asset
+// changed but the cash untouched.
+// The history line is saved last. If only that fails, the balances stay saved and logError says why.
+export async function saveEntry({ changes, record }) {
+  const savedSteps = [];
+
+  try {
+    for (const { before, after } of changes) {
+      savedSteps.push({ before, saved: await savePosition(after) });
+    }
+  } catch (error) {
+    const wasRestored = await restorePositions(savedSteps);
+    throw new Error(
+      wasRestored
+        ? `${error.message} Nothing was changed.`
+        : `${error.message} Some balances were already changed and could not be restored. Press Refresh and check them.`,
+    );
+  }
+
+  const positions = savedSteps.map((step) => step.saved);
+  try {
+    return { positions, transaction: await insertTransaction(record), logError: '' };
+  } catch (error) {
+    return { positions, transaction: null, logError: describeTransactionsError(error) };
+  }
 }

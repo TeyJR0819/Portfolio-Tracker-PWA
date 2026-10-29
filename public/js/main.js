@@ -5,7 +5,7 @@
 //   saved, session open   -> dashboard
 //   saved, session closed -> lock screen  -> dashboard
 
-import { AUTO_REFRESH_MS } from './config.js';
+import { AUTO_REFRESH_MS, STORAGE_KEYS } from './config.js';
 import { isVisibleHolding } from './logic/calculations.js';
 import { downloadCsv } from './logic/export-csv.js';
 import {
@@ -14,12 +14,25 @@ import {
   hasCredentials,
   isSessionActive,
 } from './services/auth.js';
-import { cachePositions, connectDatabase, loadPositions } from './services/database.js';
+import { cachePositions, connectDatabase, loadPositions, loadTransactions } from './services/database.js';
 import { loadMarketPrices } from './services/prices.js';
 import { registerServiceWorker } from './services/service-worker-registration.js';
-import { getPortfolio, getState, resetState, subscribe, updateState } from './state.js';
+import { setMoneyUnit } from './logic/format.js';
+import { localStore } from './services/storage.js';
+import {
+  getBasePortfolio,
+  getDisplayCurrency,
+  getPortfolio,
+  getState,
+  getUsdRate,
+  resetState,
+  subscribe,
+  updateState,
+} from './state.js';
 import { destroyAllCharts } from './ui/charts.js';
 import { byId } from './ui/dom.js';
+import { initCurrencyToggle, renderCurrencyToggle } from './ui/currency-toggle.js';
+import { initEntryDrawer } from './ui/entry-drawer.js';
 import { initLockScreen } from './ui/lock-screen.js';
 import { initSetupWizard } from './ui/setup-wizard.js';
 import {
@@ -32,12 +45,12 @@ import {
 } from './ui/status.js';
 import { initTabs } from './ui/tabs.js';
 import { showToast } from './ui/toast.js';
-import { initTransactionDrawer } from './ui/transaction-drawer.js';
 import { VIEWS } from './ui/views/index.js';
+import { initTransactionsView } from './ui/views/transactions-view.js';
 
 let lockScreen = null;
 let setupWizard = null;
-let transactionDrawer = null;
+let entryDrawer = null;
 let tabs = null;
 let refreshTimer = null;
 let isRefreshing = false;
@@ -46,9 +59,22 @@ let isRefreshing = false;
 
 function render() {
   const state = getState();
+  const shown = getDisplayCurrency();
   const portfolio = getPortfolio();
-  VIEWS[state.activeTab](portfolio);
-  renderStatus(state, portfolio.holdings);
+
+  setMoneyUnit(shown === 'USD' ? 'USD' : 'RM');
+  renderCurrencyToggle({ shown, hasRate: Boolean(getUsdRate()) });
+  VIEWS[state.activeTab]({
+    ...portfolio,
+    transactions: state.transactions,
+    transactionsError: state.transactionsError,
+  });
+  renderStatus(state, getBasePortfolio().holdings);
+}
+
+function changeDisplayCurrency(currency) {
+  localStore.setText(STORAGE_KEYS.displayCurrency, currency);
+  updateState({ displayCurrency: currency });
 }
 
 // ---------- Loading data ----------
@@ -60,11 +86,17 @@ async function refreshAll({ forcePrices = false } = {}) {
   hideDataError();
 
   try {
-    const [dataResult, priceInfo] = await Promise.all([
+    const [dataResult, priceInfo, historyResult] = await Promise.all([
       loadPositions().catch((error) => ({ failure: error })),
       loadMarketPrices({ force: forcePrices }),
+      loadTransactions(),
     ]);
-    const priceChanges = { marketPrices: priceInfo.marketPrices, priceInfo };
+    const priceChanges = {
+      marketPrices: priceInfo.marketPrices,
+      priceInfo,
+      transactions: historyResult.transactions,
+      transactionsError: historyResult.errorMessage,
+    };
 
     if (dataResult.failure) {
       // Keep what is already on screen when a later refresh fails.
@@ -124,28 +156,33 @@ function lockDashboard() {
 
 // ---------- Actions ----------
 
-function openAddTransaction() {
+// The button may name an entry type, for example the MMF tab opens the form on "MMF gain".
+function openAddEntry(button) {
   if (getState().dataInfo?.isOffline) {
-    showToast('You are viewing a saved copy. Reconnect before adding a transaction.', 'warning');
+    showToast('You are viewing a saved copy. Reconnect before adding an entry.', 'warning');
     return;
   }
-  transactionDrawer.open();
+  entryDrawer.open({ kind: button?.dataset.kind });
 }
 
-function handleTransactionSaved(savedPosition) {
-  const { positions } = getState();
-  const exists = positions.some((position) => position.id === savedPosition.id);
-  const nextPositions = exists
-    ? positions.map((position) => (position.id === savedPosition.id ? savedPosition : position))
-    : [...positions, savedPosition];
+// Puts the saved balances (and the new history line) into the screen without reloading everything.
+function handleEntrySaved({ positions: savedPositions, transaction, logError }) {
+  const byId = new Map(getState().positions.map((position) => [position.id, position]));
+  savedPositions.forEach((position) => byId.set(position.id, position));
+  const nextPositions = [...byId.values()];
 
   cachePositions(nextPositions);
-  updateState({ positions: nextPositions });
-  showToast('Transaction saved', 'positive');
+  updateState({
+    positions: nextPositions,
+    transactions: transaction ? [transaction, ...getState().transactions] : getState().transactions,
+  });
+
+  if (logError) showToast(`Saved, but the history line was not stored. ${logError}`, 'warning');
+  else showToast('Entry saved', 'positive');
 }
 
 function exportCsv() {
-  const holdings = getPortfolio().holdings.filter(isVisibleHolding);
+  const holdings = getBasePortfolio().holdings.filter(isVisibleHolding);
   if (holdings.length === 0) {
     showToast('There is nothing to export yet.', 'warning');
     return;
@@ -159,12 +196,12 @@ const ACTIONS = {
   refresh: () => refreshAll({ forcePrices: true }),
   retry: () => refreshAll(),
   export: exportCsv,
-  'add-transaction': openAddTransaction,
+  'add-entry': openAddEntry,
 };
 
 function handleActionClick(event) {
   const button = event.target.closest('[data-action]');
-  if (button) ACTIONS[button.dataset.action]?.();
+  if (button) ACTIONS[button.dataset.action]?.(button);
 }
 
 // ---------- Start-up ----------
@@ -181,13 +218,17 @@ function boot() {
 
   setupWizard = initSetupWizard({ onComplete: startDashboard });
   lockScreen = initLockScreen({ onUnlock: startDashboard });
-  transactionDrawer = initTransactionDrawer({ onSaved: handleTransactionSaved });
+  entryDrawer = initEntryDrawer({ onSaved: handleEntrySaved });
   tabs = initTabs({
     onChange: (name) => {
       destroyAllCharts();
       updateState({ activeTab: name });
     },
   });
+
+  initCurrencyToggle({ onChange: changeDisplayCurrency });
+  initTransactionsView({ onFilter: render });
+  updateState({ displayCurrency: localStore.getText(STORAGE_KEYS.displayCurrency) === 'USD' ? 'USD' : 'MYR' });
 
   subscribe(render);
   document.addEventListener('click', handleActionClick);

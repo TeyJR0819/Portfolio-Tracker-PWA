@@ -3,8 +3,9 @@
 import {
   ASSET_CATALOG,
   BROKER_ORDER,
+  BASE_CURRENCY,
+  BROKER_CURRENCIES,
   CATEGORY_COLORS,
-  ENTRY_CURRENCY_RULES,
   FALLBACK_COLORS,
   USDT_COIN_ID,
 } from '../config.js';
@@ -28,11 +29,39 @@ export function getPriceKey(assetName) {
   return entry?.coinId ?? entry?.stockSymbol ?? null;
 }
 
-// Returns 'USD', 'USDT' or null when prices for this broker and asset are typed in RM.
-export function getEntryCurrency(broker, assetName) {
-  const category = findAsset(assetName)?.category;
-  const rule = ENTRY_CURRENCY_RULES.find((item) => item.broker === broker && item.category === category);
-  return rule ? rule.currency : null;
+// 'MYR', 'USD' or 'USDT': the currency a broker account works in.
+export function getBrokerCurrency(broker) {
+  return BROKER_CURRENCIES[broker] ?? BASE_CURRENCY;
+}
+
+// Cash and money market accounts: the places money can sit and move between.
+export function getAccounts() {
+  return ASSET_CATALOG.filter((entry) => entry.category === 'Cash' || entry.category === 'MMF').map((entry) => ({
+    asset: entry.asset,
+    category: entry.category,
+    broker: entry.brokers[0],
+    currency: getBrokerCurrency(entry.brokers[0]),
+  }));
+}
+
+export function findAccount(assetName) {
+  return getAccounts().find((account) => account.asset === assetName) ?? null;
+}
+
+// The cash account of a broker, for example "IBKR Cash" for IBKR. Null when the broker has none.
+export function getCashAssetForBroker(broker) {
+  const entry = ASSET_CATALOG.find((item) => item.category === 'Cash' && item.brokers.includes(broker));
+  return entry ? entry.asset : null;
+}
+
+// Assets that can be bought and sold (not cash or money market funds).
+export function getTradableAssetsForBroker(broker) {
+  return getAssetsForBroker(broker).filter((entry) => entry.category === 'Crypto' || entry.category === 'Stocks');
+}
+
+// Brokers that offer at least one tradable asset.
+export function getTradingBrokers() {
+  return getBrokers().filter((broker) => getTradableAssetsForBroker(broker).length > 0);
 }
 
 export function isFixedPriceAsset(assetName) {

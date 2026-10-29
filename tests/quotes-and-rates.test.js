@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { applyTransaction, buildHoldings, findRate } from '../public/js/logic/calculations.js';
-import { getCoinIds, getEntryCurrency, getStockSymbols } from '../public/js/logic/catalog.js';
+import { buildHoldings, convertHoldings, findRate } from '../public/js/logic/calculations.js';
+import { getBrokerCurrency, getCoinIds, getStockSymbols } from '../public/js/logic/catalog.js';
 import { convertQuotesToMyr } from '../public/js/logic/quotes.js';
 
 test('catalogue lists stock symbols and always asks for the USDT rate', () => {
@@ -10,12 +10,12 @@ test('catalogue lists stock symbols and always asks for the USDT rate', () => {
   assert.ok(getCoinIds().includes('tether'));
 });
 
-test('IBKR stocks use USD and Pionex crypto uses USDT; everything else uses RM', () => {
-  assert.equal(getEntryCurrency('IBKR', 'VOO'), 'USD');
-  assert.equal(getEntryCurrency('Pionex', 'BTC'), 'USDT');
-  assert.equal(getEntryCurrency('Moomoo', 'VOO'), null);
-  assert.equal(getEntryCurrency('Luno', 'BTC'), null);
-  assert.equal(getEntryCurrency('Bank', 'Bank Cash'), null);
+test('IBKR works in USD, Pionex in USDT, every other broker in RM', () => {
+  assert.equal(getBrokerCurrency('IBKR'), 'USD');
+  assert.equal(getBrokerCurrency('Pionex'), 'USDT');
+  assert.equal(getBrokerCurrency('Moomoo'), 'MYR');
+  assert.equal(getBrokerCurrency('Luno'), 'MYR');
+  assert.equal(getBrokerCurrency('Bank'), 'MYR');
 });
 
 test('convertQuotesToMyr multiplies each price by its currency rate', () => {
@@ -48,13 +48,26 @@ test('stock holdings are priced from the stock symbol', () => {
   assert.equal(holding.priceSource, 'market');
 });
 
-test('a USD purchase is saved in RM at the rate of the day', () => {
-  const rate = 4.2;
-  const usdPrice = 600;
-  const empty = { id: null, category: 'Stocks', broker: 'IBKR', asset: 'VOO', qty: 0, costMyr: 0, realisedPl: 0 };
-  const { updatedPosition } = applyTransaction(empty, { action: 'buy', qty: 2, unitPrice: usdPrice * rate });
-  assert.equal(updatedPosition.costMyr, 5040);
+test('USD and USDT cash is valued at the exchange rate', () => {
+  const ibkrCash = { id: 1, category: 'Cash', broker: 'IBKR', asset: 'IBKR Cash', qty: 1000, costMyr: 4100, realisedPl: 0 };
+  const pionexCash = { id: 2, category: 'Cash', broker: 'Pionex', asset: 'Pionex Cash', qty: 500, costMyr: 2050, realisedPl: 0 };
+  const [ibkr, pionex] = buildHoldings([ibkrCash, pionexCash], { 'fx:USD': 4.2, 'fx:USDT': 4.1 });
+  assert.equal(ibkr.marketValue, 4200);
+  assert.equal(ibkr.unrealisedPl, 100);
+  assert.equal(pionex.marketValue, 2050);
+});
 
-  const sale = applyTransaction(updatedPosition, { action: 'sell', qty: 1, unitPrice: 650 * rate });
-  assert.equal(sale.realisedChange, 210); // (650 - 600) USD x 4.2
+test('convertHoldings changes money fields but not quantities or percentages', () => {
+  const holdings = buildHoldings(
+    [{ id: 1, category: 'Crypto', broker: 'Luno', asset: 'BTC', qty: 2, costMyr: 200000, realisedPl: 400 }],
+    { bitcoin: 120000 },
+  );
+  const [usd] = convertHoldings(holdings, 4);
+  assert.equal(usd.marketValue, 60000);
+  assert.equal(usd.costMyr, 50000);
+  assert.equal(usd.unrealisedPl, 10000);
+  assert.equal(usd.realisedPl, 100);
+  assert.equal(usd.unitPrice, 30000);
+  assert.equal(usd.qty, 2);
+  assert.equal(usd.unrealisedPlPct, holdings[0].unrealisedPlPct);
 });

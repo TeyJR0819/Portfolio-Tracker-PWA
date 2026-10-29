@@ -1,6 +1,6 @@
 import { isVisibleHolding, percentage } from '../../logic/calculations.js';
-import { getAssetColor } from '../../logic/catalog.js';
-import { formatNumber } from '../../logic/format.js';
+import { getAssetColor, getBrokerCurrency } from '../../logic/catalog.js';
+import { formatForeign, formatNumber, getMoneyUnit } from '../../logic/format.js';
 import { upsertDonut } from '../charts.js';
 import { setMetric } from '../metrics.js';
 import { renderTable } from '../table.js';
@@ -15,7 +15,13 @@ function createColumns(totalCash) {
     },
     { label: 'Broker', render: (row) => row.broker },
     {
-      label: 'Balance (RM)',
+      // USD and USDT accounts show their own currency too, because their RM value moves with the rate.
+      label: 'Held in',
+      numeric: true,
+      render: (row) => (getBrokerCurrency(row.broker) === 'MYR' ? '' : formatForeign(row.qty, getBrokerCurrency(row.broker))),
+    },
+    {
+      label: `Balance (${getMoneyUnit()})`,
       numeric: true,
       render: (row) => formatNumber(row.marketValue, 2),
       footer: (totals) => formatNumber(totals.marketValue, 2),
@@ -49,6 +55,6 @@ export function renderCashView({ holdings }) {
     columns: createColumns(totalCash),
     rows: cash.filter(isVisibleHolding),
     totals: { marketValue: totalCash },
-    emptyMessage: 'No cash recorded. Choose Add transaction and deposit cash.',
+    emptyMessage: 'No cash recorded. Choose Add entry and deposit cash.',
   });
 }

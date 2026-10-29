@@ -31,7 +31,11 @@ export function createOverlay(id, { dismissible = true, onClose = null } = {}) {
     const first = items[0];
     const last = items[items.length - 1];
 
-    if (event.shiftKey && document.activeElement === first) {
+    // Focus can fall to the page itself, for example when the Save button is disabled while saving.
+    if (!root.contains(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -50,7 +54,7 @@ export function createOverlay(id, { dismissible = true, onClose = null } = {}) {
     }
     root.hidden = false;
     document.body.classList.add('is-scroll-locked');
-    root.addEventListener('keydown', handleKeydown);
+    document.addEventListener('keydown', handleKeydown);
 
     requestAnimationFrame(() => {
       root.classList.add('is-open');
@@ -62,7 +66,7 @@ export function createOverlay(id, { dismissible = true, onClose = null } = {}) {
   function close() {
     if (root.hidden || closeTimer !== null) return;
     root.classList.remove('is-open');
-    root.removeEventListener('keydown', handleKeydown);
+    document.removeEventListener('keydown', handleKeydown);
 
     closeTimer = setTimeout(() => {
       closeTimer = null;

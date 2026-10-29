@@ -1,10 +1,10 @@
 // Pure calculation functions. They only take numbers in and give numbers out,
 // so they are easy to test (see tests/calculations.test.js).
 
-import { CATEGORY_ORDER, MONEY_DECIMALS, QUANTITY_DECIMALS, RATE_KEYS } from '../config.js';
+import { CATEGORY_ORDER, RATE_KEYS } from '../config.js';
 import { findAsset, getPriceKey } from './catalog.js';
 
-const QUANTITY_EPSILON = 1e-9;
+export const QUANTITY_EPSILON = 1e-9;
 
 export function roundTo(value, decimals) {
   const factor = 10 ** decimals;
@@ -25,6 +25,12 @@ export function resolveUnitPrice(position, marketPrices) {
 
   if (entry?.fixedPrice) {
     return { price: entry.fixedPrice, source: 'fixed' };
+  }
+
+  // A balance held in USD or USDT is worth the exchange rate per unit.
+  if (entry?.priceCurrency) {
+    const rate = findRate(marketPrices, entry.priceCurrency);
+    if (rate) return { price: rate, source: 'market' };
   }
 
   const priceKey = getPriceKey(position.asset);
@@ -120,54 +126,15 @@ export function listPriceFallbacks(holdings) {
   return holdings.filter((holding) => holding.priceSource === 'cost' && holding.qty > 0).map((holding) => holding.asset);
 }
 
-// Applies one buy or sell to a position using the weighted-average cost method.
-//   buy  : quantity and cost both grow.
-//   sell : cost leaves at the average cost per unit; the rest of the proceeds is realised profit or loss.
-export function applyTransaction(position, { action, qty, unitPrice }) {
-  if (!Number.isFinite(qty) || qty <= 0) {
-    throw new Error('Enter a quantity greater than zero.');
-  }
-  if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-    throw new Error('Enter a price of zero or more.');
-  }
-
-  const totalAmount = qty * unitPrice;
-
-  if (action === 'buy') {
-    return {
-      totalAmount,
-      realisedChange: 0,
-      updatedPosition: {
-        ...position,
-        qty: roundTo(position.qty + qty, QUANTITY_DECIMALS),
-        costMyr: roundTo(position.costMyr + totalAmount, MONEY_DECIMALS),
-      },
-    };
-  }
-
-  if (action === 'sell') {
-    if (qty > position.qty + QUANTITY_EPSILON) {
-      throw new Error('You cannot sell more than you hold.');
-    }
-
-    const sellQty = Math.min(qty, position.qty);
-    const averageCost = position.qty > 0 ? position.costMyr / position.qty : 0;
-    const costRemoved = averageCost * sellQty;
-    const remainingQty = roundTo(position.qty - sellQty, QUANTITY_DECIMALS);
-    const isClosed = remainingQty <= QUANTITY_EPSILON;
-    const realisedChange = sellQty * unitPrice - costRemoved;
-
-    return {
-      totalAmount,
-      realisedChange,
-      updatedPosition: {
-        ...position,
-        qty: isClosed ? 0 : remainingQty,
-        costMyr: isClosed ? 0 : roundTo(position.costMyr - costRemoved, MONEY_DECIMALS),
-        realisedPl: roundTo(position.realisedPl + realisedChange, MONEY_DECIMALS),
-      },
-    };
-  }
-
-  throw new Error('Choose buy or sell.');
+// Converts the money fields of holdings from RM into another currency, for display only.
+// rate is RM per 1 unit of the target currency. Quantities and percentages stay unchanged.
+export function convertHoldings(holdings, rate) {
+  return holdings.map((holding) => ({
+    ...holding,
+    unitPrice: holding.unitPrice / rate,
+    marketValue: holding.marketValue / rate,
+    costMyr: holding.costMyr / rate,
+    unrealisedPl: holding.unrealisedPl / rate,
+    realisedPl: holding.realisedPl / rate,
+  }));
 }

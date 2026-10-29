@@ -6,9 +6,12 @@ export const STORAGE_KEYS = Object.freeze({
   sessionUnlocked: 'portfolio.sessionUnlocked',
   priceCache: 'portfolio.priceCache',
   positionsSnapshot: 'portfolio.positionsSnapshot',
+  displayCurrency: 'portfolio.displayCurrency',
 });
 
 export const DATABASE_TABLE = 'portfolio';
+export const TRANSACTIONS_TABLE = 'transactions';
+export const TRANSACTIONS_LIMIT = 500;
 
 export const PRICE_API_URL = 'https://api.coingecko.com/api/v3/simple/price';
 export const PRICE_CURRENCY = 'myr';
@@ -43,7 +46,8 @@ export const FALLBACK_COLORS = Object.freeze(['#94A3B8', '#F472B6', '#FACC15', '
 //   brokers    : where the asset can be held
 //   coinId     : CoinGecko identifier (crypto)
 //   stockSymbol: Yahoo Finance symbol (stocks and ETFs)
-//   fixedPrice : price in RM that never changes (cash and money market funds)
+//   fixedPrice : price in RM that never changes (RM cash and money market funds)
+//   priceCurrency: the balance is held in this currency (USD or USDT), so its price is the exchange rate
 export const ASSET_CATALOG = Object.freeze([
   { asset: 'BTC', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'bitcoin', color: '#F59E0B' },
   { asset: 'ETH', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'ethereum', color: '#8B5CF6' },
@@ -53,6 +57,9 @@ export const ASSET_CATALOG = Object.freeze([
   { asset: 'TON', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'the-open-network', color: '#EC4899' },
   { asset: 'Bank Cash', category: 'Cash', brokers: ['Bank'], fixedPrice: 1, color: '#059669' },
   { asset: 'Luno Cash', category: 'Cash', brokers: ['Luno'], fixedPrice: 1, color: '#14B8A6' },
+  { asset: 'Pionex Cash', category: 'Cash', brokers: ['Pionex'], priceCurrency: 'USDT', color: '#0284C7' },
+  { asset: 'Moomoo Cash', category: 'Cash', brokers: ['Moomoo'], fixedPrice: 1, color: '#EA580C' },
+  { asset: 'IBKR Cash', category: 'Cash', brokers: ['IBKR'], priceCurrency: 'USD', color: '#DC2626' },
   { asset: 'Moomoo MMF', category: 'MMF', brokers: ['Moomoo'], fixedPrice: 1, color: '#D97706' },
   { asset: 'VOO', category: 'Stocks', brokers: ['Moomoo', 'IBKR'], stockSymbol: 'VOO', color: '#7C3AED' },
   { asset: 'QQQM', category: 'Stocks', brokers: ['Moomoo', 'IBKR'], stockSymbol: 'QQQM', color: '#A78BFA' },
@@ -61,12 +68,11 @@ export const ASSET_CATALOG = Object.freeze([
 
 export const BROKER_ORDER = Object.freeze(['Luno', 'Pionex', 'Moomoo', 'IBKR', 'Bank']);
 
-// Where prices are typed in a foreign currency instead of RM.
-// The app converts the amount to RM when it saves, so the database always holds RM.
-export const ENTRY_CURRENCY_RULES = Object.freeze([
-  { broker: 'IBKR', category: 'Stocks', currency: 'USD' },
-  { broker: 'Pionex', category: 'Crypto', currency: 'USDT' },
-]);
+// The currency each broker account works in. Every other broker works in RM.
+// Prices, fees and cash movements at these brokers are typed in this currency.
+// The app converts them to RM when it saves, so the database always holds RM costs.
+export const BROKER_CURRENCIES = Object.freeze({ IBKR: 'USD', Pionex: 'USDT' });
+export const BASE_CURRENCY = 'MYR';
 
 // Names under which exchange rates (RM per 1 unit of the currency) are kept with the prices.
 export const RATE_KEYS = Object.freeze({ USD: 'fx:USD', USDT: 'fx:USDT' });

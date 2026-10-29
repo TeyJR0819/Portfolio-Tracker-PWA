@@ -1,7 +1,7 @@
 // Column lists shared by several tables.
 
 import { getAssetColor } from '../logic/catalog.js';
-import { formatNumber, formatPercent, formatQuantity, formatSignedRm } from '../logic/format.js';
+import { formatNumber, formatPercent, formatQuantity, formatSignedAmount, getMoneyUnit } from '../logic/format.js';
 
 // Columns for a table of holdings that have a market price (stocks and crypto).
 export function createHoldingColumns({ showBroker = false, quantityLabel = 'Quantity' } = {}) {
@@ -20,25 +20,25 @@ export function createHoldingColumns({ showBroker = false, quantityLabel = 'Quan
 
   columns.push(
     { label: quantityLabel, numeric: true, render: (row) => formatQuantity(row.qty, 6) },
-    { label: 'Price (RM)', numeric: true, render: (row) => formatNumber(row.unitPrice, 2) },
+    { label: `Price (${getMoneyUnit()})`, numeric: true, render: (row) => formatNumber(row.unitPrice, 2) },
     {
-      label: 'Value (RM)',
+      label: `Value (${getMoneyUnit()})`,
       numeric: true,
       render: (row) => formatNumber(row.marketValue, 2),
       footer: (totals) => formatNumber(totals.marketValue, 2),
     },
     {
-      label: 'Cost (RM)',
+      label: `Cost (${getMoneyUnit()})`,
       numeric: true,
       render: (row) => formatNumber(row.costMyr, 2),
       footer: (totals) => formatNumber(totals.costMyr, 2),
     },
     {
-      label: 'Unrealised P/L (RM)',
+      label: `Unrealised P/L (${getMoneyUnit()})`,
       numeric: true,
-      render: (row) => formatSignedRm(row.unrealisedPl).replace('RM ', ''),
+      render: (row) => formatSignedAmount(row.unrealisedPl),
       tone: (row) => row.unrealisedPl,
-      footer: (totals) => formatSignedRm(totals.unrealisedPl).replace('RM ', ''),
+      footer: (totals) => formatSignedAmount(totals.unrealisedPl),
     },
     {
       label: 'P/L (%)',
@@ -48,11 +48,11 @@ export function createHoldingColumns({ showBroker = false, quantityLabel = 'Quan
       footer: (totals) => formatPercent(totals.unrealisedPlPct),
     },
     {
-      label: 'Realised P/L (RM)',
+      label: `Realised P/L (${getMoneyUnit()})`,
       numeric: true,
-      render: (row) => formatSignedRm(row.realisedPl).replace('RM ', ''),
+      render: (row) => formatSignedAmount(row.realisedPl),
       tone: (row) => row.realisedPl,
-      footer: (totals) => formatSignedRm(totals.realisedPl).replace('RM ', ''),
+      footer: (totals) => formatSignedAmount(totals.realisedPl),
     },
   );
 

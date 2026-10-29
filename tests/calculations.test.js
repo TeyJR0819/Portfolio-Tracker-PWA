@@ -4,7 +4,6 @@ import { test } from 'node:test';
 import { buildCsv } from '../public/js/logic/export-csv.js';
 import { formatRm, formatSignedRm } from '../public/js/logic/format.js';
 import {
-  applyTransaction,
   buildHoldings,
   groupTotals,
   resolveUnitPrice,
@@ -43,43 +42,6 @@ test('groupTotals adds holdings that share a key', () => {
   assert.equal(groups.length, 1);
   assert.equal(groups[0].marketValue, 300000);
   assert.equal(groups[0].costMyr, 290000);
-});
-
-test('buy updates the weighted-average cost', () => {
-  const { updatedPosition } = applyTransaction(btc, { action: 'buy', qty: 2, unitPrice: 120000 });
-  assert.equal(updatedPosition.qty, 4);
-  assert.equal(updatedPosition.costMyr, 440000);
-  assert.equal(updatedPosition.realisedPl, 0);
-});
-
-test('sell removes cost at the average and records realised profit', () => {
-  const { updatedPosition, realisedChange } = applyTransaction(btc, { action: 'sell', qty: 1, unitPrice: 130000 });
-  assert.equal(updatedPosition.qty, 1);
-  assert.equal(updatedPosition.costMyr, 100000);
-  assert.equal(realisedChange, 30000);
-  assert.equal(updatedPosition.realisedPl, 30000);
-});
-
-test('selling everything closes the position cleanly', () => {
-  const { updatedPosition } = applyTransaction(btc, { action: 'sell', qty: 2, unitPrice: 90000 });
-  assert.equal(updatedPosition.qty, 0);
-  assert.equal(updatedPosition.costMyr, 0);
-  assert.equal(updatedPosition.realisedPl, -20000);
-});
-
-test('withdrawing cash does not create profit', () => {
-  const cash = { ...btc, asset: 'Bank Cash', broker: 'Bank', category: 'Cash', qty: 1000, costMyr: 1000 };
-  const { updatedPosition } = applyTransaction(cash, { action: 'sell', qty: 250, unitPrice: 1 });
-  assert.equal(updatedPosition.qty, 750);
-  assert.equal(updatedPosition.costMyr, 750);
-  assert.equal(updatedPosition.realisedPl, 0);
-});
-
-test('invalid transactions are rejected', () => {
-  assert.throws(() => applyTransaction(btc, { action: 'sell', qty: 3, unitPrice: 1 }), /more than you hold/);
-  assert.throws(() => applyTransaction(btc, { action: 'buy', qty: 0, unitPrice: 1 }), /greater than zero/);
-  assert.throws(() => applyTransaction(btc, { action: 'buy', qty: 1, unitPrice: -1 }), /zero or more/);
-  assert.throws(() => applyTransaction(btc, { action: 'hold', qty: 1, unitPrice: 1 }), /buy or sell/);
 });
 
 test('money formatting handles signs and negative zero', () => {

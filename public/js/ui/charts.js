@@ -3,7 +3,7 @@
 
 import { MONEY_DECIMALS } from '../config.js';
 import { percentage, roundTo } from '../logic/calculations.js';
-import { formatNumber, formatRm } from '../logic/format.js';
+import { formatMoney, formatNumber } from '../logic/format.js';
 import { byId, prefersReducedMotion, readCssVariable } from './dom.js';
 
 const charts = new Map();
@@ -39,7 +39,7 @@ const centerTextPlugin = {
 function buildCenterOptions(title, total) {
   return {
     title,
-    value: total > 0 ? formatRm(total) : '',
+    value: total > 0 ? formatMoney(total) : '',
     fontFamily: readCssVariable('--font-sans'),
     valueColor: readCssVariable('--color-text'),
     titleColor: readCssVariable('--color-text-muted'),
@@ -75,7 +75,7 @@ function createDonut(canvas, data, centerOptions, total) {
           callbacks: {
             label: (item) => {
               const share = percentage(item.parsed, total());
-              return ` ${item.label}: ${formatRm(item.parsed)} (${formatNumber(share, 1)}%)`;
+              return ` ${item.label}: ${formatMoney(item.parsed)} (${formatNumber(share, 1)}%)`;
             },
           },
         },

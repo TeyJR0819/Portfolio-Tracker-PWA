@@ -52,6 +52,7 @@
       <symbol id="icon-stocks" viewBox="0 0 24 24"><path d="M3 17l5.5-6 4 4L21 6.5"/><path d="M15 6.5h6v6"/></symbol>
       <symbol id="icon-mmf" viewBox="0 0 24 24"><path d="M12 3.5l9 4.8-9 4.8-9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8"/><path d="M3 16.5l9 4.8 9-4.8"/></symbol>
       <symbol id="icon-crypto" viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M9.5 9.5h4a1.7 1.7 0 010 3.4h-4m0 0h4.4a1.8 1.8 0 010 3.6H9.5M9.5 9.5v7M11.5 8v1.5M11.5 16.5V18"/></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><path d="M4.5 6.5v.01M4.5 12v.01M4.5 17.5v.01"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.3-4.5L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0014.3 4.5L20 15.5"/><path d="M20 20v-4.5h-4.5"/></symbol>
       <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7.5 11L12 15.5 16.5 11"/><path d="M4.5 19.5h15"/></symbol>
       <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></symbol>
@@ -77,6 +78,10 @@
         </p>
 
         <div class="top-actions">
+          <div class="currency-toggle" id="currency-toggle" role="group" aria-label="Display currency">
+            <button type="button" data-currency="MYR" aria-pressed="true">RM</button>
+            <button type="button" data-currency="USD" aria-pressed="false">USD</button>
+          </div>
           <button class="button button-quiet" type="button" data-action="refresh" aria-label="Refresh prices" title="Refresh prices">
             <svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
             <span class="button-label">Refresh</span>
@@ -85,9 +90,9 @@
             <svg class="icon" aria-hidden="true"><use href="#icon-download"></use></svg>
             <span class="button-label">Export CSV</span>
           </button>
-          <button class="button button-primary only-wide" type="button" data-action="add-transaction">
+          <button class="button button-primary only-wide" type="button" data-action="add-entry">
             <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
-            <span>Add transaction</span>
+            <span>Add entry</span>
           </button>
           <button class="button button-quiet" type="button" data-action="lock" aria-label="Lock dashboard" title="Lock dashboard">
             <svg class="icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
@@ -112,6 +117,9 @@
           </button>
           <button class="tab-button" type="button" role="tab" id="tab-crypto" data-tab="crypto" aria-selected="false" tabindex="-1" aria-controls="panel-crypto">
             <svg class="icon" aria-hidden="true"><use href="#icon-crypto"></use></svg><span>Crypto</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-transactions" data-tab="transactions" aria-selected="false" tabindex="-1" aria-controls="panel-transactions">
+            <svg class="icon" aria-hidden="true"><use href="#icon-list"></use></svg><span>Transactions</span>
           </button>
         </div>
       </nav>
@@ -175,9 +183,9 @@
 
           <div class="panel-grid">
             <article class="card chart-card">
-              <h3 class="card-title">Bank cash and Luno cash</h3>
+              <h3 class="card-title">Cash by account</h3>
               <div class="chart-box">
-                <canvas id="chart-cash-split" role="img" aria-label="Bank cash compared with Luno cash"></canvas>
+                <canvas id="chart-cash-split" role="img" aria-label="Cash by account"></canvas>
                 <p class="chart-empty" hidden>No cash recorded yet.</p>
               </div>
             </article>
@@ -234,7 +242,10 @@
           </div>
 
           <article class="card table-card">
-            <h3 class="card-title">Money market funds</h3>
+            <div class="card-toolbar">
+              <h3 class="card-title">Money market funds</h3>
+              <button class="button button-primary" type="button" data-action="add-entry" data-kind="mmf_gain">Add gain</button>
+            </div>
             <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
             <div class="table-scroll"><table class="data-table" id="table-mmf"></table></div>
           </article>
@@ -287,9 +298,23 @@
             <div class="table-scroll"><table class="data-table" id="table-crypto"></table></div>
           </article>
         </section>
+
+        <!-- Transactions -->
+        <section class="tab-panel" id="panel-transactions" role="tabpanel" aria-labelledby="tab-transactions" data-panel="transactions" hidden>
+          <article class="card table-card">
+            <div class="card-toolbar">
+              <h3 class="card-title">Transactions</h3>
+              <div class="toolbar-field">
+                <label class="visually-hidden" for="transactions-filter">Filter by type</label>
+                <select id="transactions-filter"></select>
+              </div>
+            </div>
+            <div class="table-scroll"><table class="data-table" id="table-transactions"></table></div>
+          </article>
+        </section>
       </main>
 
-      <button class="fab" type="button" data-action="add-transaction" aria-label="Add transaction">
+      <button class="fab" type="button" data-action="add-entry" aria-label="Add entry">
         <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
       </button>
     </div>
@@ -363,49 +388,121 @@
       </div>
     </div>
 
-    <!-- Transaction drawer -->
-    <div class="overlay overlay-drawer" id="transaction-drawer" role="dialog" aria-modal="true" aria-labelledby="transaction-title" hidden>
+    <!-- Entry drawer: buy, sell, transfer, deposit, cash out, MMF gain, adjust balance -->
+    <div class="overlay overlay-drawer" id="entry-drawer" role="dialog" aria-modal="true" aria-labelledby="entry-title" hidden>
       <div class="overlay-panel">
         <div class="drawer-header">
-          <h2 class="overlay-title" id="transaction-title">Add transaction</h2>
+          <h2 class="overlay-title" id="entry-title">Add entry</h2>
           <button class="button button-icon" type="button" data-overlay-close aria-label="Close">
             <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
           </button>
         </div>
 
-        <form class="form" id="transaction-form" novalidate autocomplete="off">
-          <fieldset class="segmented">
-            <legend class="visually-hidden">Action</legend>
-            <input type="radio" name="action" id="transaction-action-buy" value="buy" checked />
-            <label for="transaction-action-buy">Buy / Deposit Cash</label>
-            <input type="radio" name="action" id="transaction-action-sell" value="sell" />
-            <label for="transaction-action-sell">Sell / Withdraw Cash</label>
-          </fieldset>
-
+        <form class="form" id="entry-form" novalidate autocomplete="off">
+          <div class="field">
+            <label for="entry-kind">Type</label>
+            <select id="entry-kind"></select>
+          </div>
           <div class="field-row">
             <div class="field">
-              <label for="transaction-broker">Broker</label>
-              <select id="transaction-broker"></select>
+              <label for="entry-date">Date</label>
+              <input id="entry-date" type="date" />
             </div>
             <div class="field">
-              <label for="transaction-asset">Asset</label>
-              <select id="transaction-asset"></select>
+              <label for="entry-note">Note (optional)</label>
+              <input id="entry-note" type="text" maxlength="200" placeholder="For example: salary" />
             </div>
           </div>
-          <p class="field-help" id="transaction-holding"></p>
 
-          <div class="field">
-            <label for="transaction-quantity" id="transaction-quantity-label">Quantity</label>
-            <input id="transaction-quantity" type="number" inputmode="decimal" step="any" min="0" placeholder="0.000000" />
-          </div>
-          <div class="field" id="transaction-price-field">
-            <label for="transaction-price" id="transaction-price-label">Price per unit (RM)</label>
-            <input id="transaction-price" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+          <!-- Buy and sell -->
+          <div class="form" data-kinds="buy sell">
+            <div class="field-row">
+              <div class="field">
+                <label for="entry-broker">Broker</label>
+                <select id="entry-broker"></select>
+              </div>
+              <div class="field">
+                <label for="entry-asset">Asset</label>
+                <select id="entry-asset"></select>
+              </div>
+            </div>
+            <p class="field-help" id="entry-holding"></p>
+
+            <div class="field">
+              <label for="entry-quantity">Quantity</label>
+              <input id="entry-quantity" type="number" inputmode="decimal" step="any" min="0" placeholder="0.000000" />
+            </div>
+
+            <fieldset class="segmented">
+              <legend class="visually-hidden">How to enter the amount</legend>
+              <input type="radio" name="entry-mode" id="entry-mode-price" value="price" checked />
+              <label for="entry-mode-price">Price per unit</label>
+              <input type="radio" name="entry-mode" id="entry-mode-total" value="total" />
+              <label for="entry-mode-total">Total amount</label>
+            </fieldset>
+
+            <div class="field-row">
+              <div class="field" id="entry-price-field">
+                <label for="entry-price" id="entry-price-label">Price per unit</label>
+                <input id="entry-price" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+              </div>
+              <div class="field" id="entry-total-field" hidden>
+                <label for="entry-total" id="entry-total-label">Total amount</label>
+                <input id="entry-total" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+              </div>
+              <div class="field">
+                <label for="entry-fee" id="entry-fee-label">Fee (optional)</label>
+                <input id="entry-fee" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+              </div>
+            </div>
+
+            <label class="checkbox" id="entry-use-cash-field">
+              <input type="checkbox" id="entry-use-cash" checked />
+              <span id="entry-use-cash-label">Use broker cash</span>
+            </label>
           </div>
 
-          <dl class="preview" id="transaction-preview" hidden></dl>
-          <p class="form-error" id="transaction-error" role="alert" hidden></p>
-          <button class="button button-primary button-block" type="submit" id="transaction-submit">Save transaction</button>
+          <!-- Transfer -->
+          <div class="form" data-kinds="transfer">
+            <div class="field-row">
+              <div class="field">
+                <label for="entry-from">From</label>
+                <select id="entry-from"></select>
+              </div>
+              <div class="field">
+                <label for="entry-to">To</label>
+                <select id="entry-to"></select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="entry-sent" id="entry-sent-label">Amount sent</label>
+                <input id="entry-sent" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+              </div>
+              <div class="field">
+                <label for="entry-received" id="entry-received-label">Amount received</label>
+                <input id="entry-received" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+              </div>
+            </div>
+            <p class="field-help">The received amount is filled in at today's rate. Change it to the real amount if it differs.</p>
+          </div>
+
+          <!-- Deposit, cash out, MMF gain, adjust balance -->
+          <div class="form" data-kinds="deposit cashout mmf_gain adjust">
+            <div class="field">
+              <label for="entry-account" id="entry-account-label">Account</label>
+              <select id="entry-account"></select>
+            </div>
+            <p class="field-help" id="entry-account-help"></p>
+            <div class="field">
+              <label for="entry-amount" id="entry-amount-label">Amount</label>
+              <input id="entry-amount" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00" />
+            </div>
+          </div>
+
+          <dl class="preview" id="entry-preview" hidden></dl>
+          <p class="form-error" id="entry-error" role="alert" hidden></p>
+          <button class="button button-primary button-block" type="submit" id="entry-submit">Save entry</button>
         </form>
       </div>
     </div>

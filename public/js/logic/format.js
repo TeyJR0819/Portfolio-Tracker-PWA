@@ -22,6 +22,35 @@ export function formatNumber(value, decimals = 2) {
   return getFormatter(decimals).format(clean(value, decimals));
 }
 
+// The money unit on screen: "RM" or "USD". Set once per render from the display currency.
+let moneyUnit = 'RM';
+
+export function setMoneyUnit(unit) {
+  moneyUnit = unit;
+}
+
+export function getMoneyUnit() {
+  return moneyUnit;
+}
+
+// Amounts that are already converted to the display currency.
+export function formatMoney(value) {
+  const number = clean(value, 2);
+  return `${number < 0 ? '-' : ''}${moneyUnit} ${formatNumber(Math.abs(number), 2)}`;
+}
+
+export function formatSignedMoney(value) {
+  const number = clean(value, 2);
+  return `${number > 0 ? '+' : ''}${formatMoney(number)}`;
+}
+
+// A signed number without a unit, for table cells whose header already names the unit.
+export function formatSignedAmount(value) {
+  const number = clean(value, 2);
+  return `${number > 0 ? '+' : ''}${formatNumber(number, 2)}`;
+}
+
+// Always RM, whatever the display currency is. Used for stored RM amounts.
 export function formatRm(value) {
   const number = clean(value, 2);
   return `${number < 0 ? '-' : ''}RM ${formatNumber(Math.abs(number), 2)}`;
@@ -29,7 +58,7 @@ export function formatRm(value) {
 
 // Amount in a foreign currency, for example "USD 1,250.00".
 export function formatForeign(value, currencyCode) {
-  return `${currencyCode} ${formatNumber(value, 2)}`;
+  return `${currencyCode === 'MYR' ? 'RM' : currencyCode} ${formatNumber(value, 2)}`;
 }
 
 export function formatSignedRm(value) {

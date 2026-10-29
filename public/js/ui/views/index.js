@@ -6,6 +6,7 @@ import { renderCryptoView } from './crypto-view.js';
 import { renderMmfView } from './mmf-view.js';
 import { renderStocksView } from './stocks-view.js';
 import { renderSummaryView } from './summary-view.js';
+import { renderTransactionsView } from './transactions-view.js';
 
 export const VIEWS = Object.freeze({
   summary: renderSummaryView,
@@ -13,4 +14,5 @@ export const VIEWS = Object.freeze({
   stocks: renderStocksView,
   mmf: renderMmfView,
   crypto: renderCryptoView,
+  transactions: renderTransactionsView,
 });
