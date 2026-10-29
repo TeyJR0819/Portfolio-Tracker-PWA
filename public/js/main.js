@@ -14,7 +14,7 @@ import {
   hasCredentials,
   isSessionActive,
 } from './services/auth.js';
-import { cachePositions, connectDatabase, getSession, loadPositions, loadTransactions } from './services/database.js';
+import { cachePositions, connectDatabase, getSession, loadBrokerSync, loadPositions, loadTransactions } from './services/database.js';
 import { loadMarketPrices } from './services/prices.js';
 import { registerServiceWorker } from './services/service-worker-registration.js';
 import { setMoneyUnit } from './logic/format.js';
@@ -70,6 +70,8 @@ function render() {
     ...portfolio,
     transactions: state.transactions,
     transactionsError: state.transactionsError,
+    positions: state.positions,
+    brokerSync: state.brokerSync,
   });
   renderStatus(state, getBasePortfolio().holdings);
 }
@@ -88,16 +90,18 @@ async function refreshAll({ forcePrices = false } = {}) {
   hideDataError();
 
   try {
-    const [dataResult, priceInfo, historyResult] = await Promise.all([
+    const [dataResult, priceInfo, historyResult, brokerSync] = await Promise.all([
       loadPositions().catch((error) => ({ failure: error })),
       loadMarketPrices({ force: forcePrices }),
       loadTransactions(),
+      loadBrokerSync(),
     ]);
     const priceChanges = {
       marketPrices: priceInfo.marketPrices,
       priceInfo,
       transactions: historyResult.transactions,
       transactionsError: historyResult.errorMessage,
+      brokerSync,
     };
 
     if (dataResult.failure?.isAuthError) {

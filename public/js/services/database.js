@@ -2,7 +2,7 @@
 // Database columns use snake_case; the rest of the app uses camelCase.
 // The two functions toPosition and toDatabaseRow translate between them.
 
-import { DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
+import { BROKER_BALANCES_TABLE, BROKER_SYNC_STATUS_TABLE, DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
 import { localStore } from './storage.js';
 
 let client = null;
@@ -294,6 +294,25 @@ export async function loadTransactions() {
     return { transactions: data.map(toTransaction), errorMessage: '' };
   } catch (error) {
     return { transactions: [], errorMessage: describeTransactionsError(error) };
+  }
+}
+
+// Reads what the Worker saved from the brokers. Never throws: the dashboard works without it.
+// An empty result means the sync is not set up yet (or the tables do not exist).
+export async function loadBrokerSync() {
+  try {
+    const [balances, statuses] = await Promise.all([
+      getClient().from(BROKER_BALANCES_TABLE).select('broker, asset, qty'),
+      getClient().from(BROKER_SYNC_STATUS_TABLE).select('broker, ok, message, synced_at'),
+    ]);
+    if (balances.error) throw balances.error;
+    if (statuses.error) throw statuses.error;
+    return {
+      balances: balances.data.map((row) => ({ broker: row.broker, asset: row.asset, qty: toNumber(row.qty) })),
+      statuses: statuses.data.map((row) => ({ broker: row.broker, ok: row.ok, message: row.message, syncedAt: row.synced_at })),
+    };
+  } catch {
+    return { balances: [], statuses: [] };
   }
 }
 

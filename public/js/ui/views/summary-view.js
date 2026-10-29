@@ -3,6 +3,7 @@ import { getCategoryColor } from '../../logic/catalog.js';
 import { formatNumber, formatPercent, formatSignedAmount, formatSignedMoney, getMoneyUnit } from '../../logic/format.js';
 import { upsertDonut } from '../charts.js';
 import { setMetric } from '../metrics.js';
+import { renderBrokerCheck } from '../broker-check.js';
 import { renderTable } from '../table.js';
 
 function createColumns(totalValue) {
@@ -48,7 +49,7 @@ function createColumns(totalValue) {
   ];
 }
 
-export function renderSummaryView({ holdings, summary }) {
+export function renderSummaryView({ holdings, summary, positions, brokerSync }) {
   setMetric('metric-total-value', summary.marketValue);
   setMetric('metric-cost-basis', summary.costMyr);
   setMetric('metric-unrealised-pl', summary.unrealisedPl, { format: formatSignedMoney, toned: true });
@@ -73,4 +74,6 @@ export function renderSummaryView({ holdings, summary }) {
     totals: summary,
     emptyMessage: 'No holdings yet. Choose Add entry to record your first one.',
   });
+
+  renderBrokerCheck({ positions, brokerSync });
 }

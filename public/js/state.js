@@ -10,6 +10,7 @@ const state = {
   dataInfo: null, // { isOffline, savedAt, errorMessage }
   transactions: [],
   transactionsError: '',
+  brokerSync: { balances: [], statuses: [] }, // What the Worker read from the brokers.
   displayCurrency: 'MYR', // 'MYR' or 'USD'. Only changes how amounts are shown.
   activeTab: 'summary',
 };
@@ -46,6 +47,7 @@ export function resetState() {
     dataInfo: null,
     transactions: [],
     transactionsError: '',
+    brokerSync: { balances: [], statuses: [] },
   });
   clearCache();
 }
