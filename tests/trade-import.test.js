@@ -108,3 +108,49 @@ test('plan: a missing exchange rate is reported instead of guessing', () => {
   assert.match(result.message, /rate is not available/);
   assert.deepEqual(result.importedIds, []);
 });
+
+test('plan: transfer_to_pionex deducts from Luno and adds to Pionex with proportional cost basis', () => {
+  const lunoAda = { id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 2414.88934, costMyr: 4829.78, realisedPl: 0 };
+  const transfer = trade('t1', {
+    asset: 'ADA',
+    side: 'transfer_to_pionex',
+    qty: 1008.2163699,
+    cashAmount: 0,
+    quoteCurrency: 'MYR',
+  });
+  const result = planTradeImport({ trades: [transfer], positions: [lunoAda], marketPrices: { cardano: 2.0 } });
+  assert.equal(result.message, '');
+  assert.deepEqual(result.importedIds, ['t1']);
+
+  const newLuno = result.positions.find((p) => p.broker === 'Luno' && p.asset === 'ADA');
+  const newPionex = result.positions.find((p) => p.broker === 'Pionex' && p.asset === 'ADA');
+
+  assert.equal(newLuno.qty, Number((2414.88934 - 1008.2163699).toFixed(8)));
+  assert.equal(newPionex.qty, 1008.2163699);
+  assert.equal(newPionex.costMyr, 2016.43);
+  assert.equal(newLuno.costMyr, Number((4829.78 - 2016.43).toFixed(2)));
+  assert.equal(newLuno.realisedPl, 0);
+  assert.equal(newPionex.realisedPl, 0);
+
+  const record = result.records[0];
+  assert.equal(record.kind, 'transfer');
+  assert.equal(record.note, 'Transferred 1008.2163699 ADA from Luno to Pionex');
+  assert.equal(record.fromAccount, 'Luno ADA');
+  assert.equal(record.toAccount, 'Pionex ADA');
+});
+
+test('plan: an inflow with cashAmount 0 uses market price for cost basis', () => {
+  const inflow = trade('in1', {
+    asset: 'BTC',
+    side: 'buy',
+    qty: 0.00380077,
+    cashAmount: 0,
+    quoteCurrency: 'MYR',
+  });
+  const result = planTradeImport({ trades: [inflow], positions: [], marketPrices: { bitcoin: 300000 } });
+  assert.equal(result.message, '');
+  assert.deepEqual(result.importedIds, ['in1']);
+  const btc = result.positions.find((p) => p.broker === 'Luno' && p.asset === 'BTC');
+  assert.equal(btc.qty, 0.00380077);
+  assert.equal(btc.costMyr, Math.round(0.00380077 * 300000 * 100) / 100);
+});

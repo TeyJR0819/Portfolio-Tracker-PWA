@@ -38,9 +38,9 @@ async function signedGet({ path, params, apiKey, apiSecret, fetchImpl, now }) {
 }
 
 // Pionex allows 10 request weight per second per account, and a fills request weighs 5. Requests are
-// spaced so the limit is never reached. After a 429 Pionex bans the account for 60 seconds, and every
-// further request during the ban makes it longer, so the code stops instead of retrying.
+// spaced so the limit is never reached.
 const REQUEST_SPACING_MS = 700;
+
 // What Pionex said with a 429, in a short form for the status line (never contains a key).
 async function describeRateLimit(response) {
   const body = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 100);
@@ -50,25 +50,40 @@ async function describeRateLimit(response) {
 
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now }) {
-  const response = await signedGet({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now });
-  if (response.status === 429) throw new Error(`Pionex rate limit reached (${await describeRateLimit(response)}). It will be tried again in the next run.`);
-  if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
+// Retry up to 2 times on 429 with short backoff within Cloudflare Worker time limits.
+const BALANCE_MAX_ATTEMPTS = 2;
+const BALANCE_RETRY_MS = 1500;
 
-  const body = await response.json();
-  if (body.result === false) throw new Error(`Pionex refused the request (${body.code ?? 'no code'}).`);
+export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, wait = defaultWait }) {
+  let lastDetail = '';
+  for (let attempt = 0; attempt < BALANCE_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await wait(BALANCE_RETRY_MS);
+    }
+    const response = await signedGet({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now });
+    if (response.status === 429) {
+      lastDetail = await describeRateLimit(response);
+      continue;
+    }
+    if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
 
-  const totals = new Map();
-  for (const entry of body.data?.balances ?? []) {
-    const asset = ASSET_NAMES[entry.coin] ?? entry.coin;
-    const qty = Number(entry.free) + Number(entry.frozen);
-    if (!Number.isFinite(qty)) continue;
-    totals.set(asset, (totals.get(asset) ?? 0) + qty);
+    const body = await response.json();
+    if (body.result === false) throw new Error(`Pionex refused the request (${body.code ?? 'no code'}).`);
+
+    const totals = new Map();
+    for (const entry of body.data?.balances ?? []) {
+      const asset = ASSET_NAMES[entry.coin] ?? entry.coin;
+      const qty = Number(entry.free) + Number(entry.frozen);
+      if (!Number.isFinite(qty)) continue;
+      totals.set(asset, (totals.get(asset) ?? 0) + qty);
+    }
+    return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
   }
-  return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
+  throw new Error(`Pionex rate limit reached (${lastDetail}). It will be tried again in the next run.`);
 }
 
-// Reads the latest fills of every tracked coin against USDT. pages > 1 reads further back (first-time import).
+// Reads the latest fills of every tracked coin against USDT.
+// When pages === 0 (backfill mode), reads ALL pages until Pionex returns a partial page.
 // Returns rows for the broker_trades table. When Pionex answers 429, the rows read so far are returned
 // with rows.isLimited set, and the rest follows in the next run.
 export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, pages = 1, wait = defaultWait }) {
@@ -76,11 +91,15 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
   rows.isLimited = false;
   rows.limitDetail = '';
 
+  const unlimited = pages === 0;
+
   for (const asset of TRADED_ASSETS) {
     const symbol = `${asset}_USDT`;
     let endTime = null;
+    let page = 0;
 
-    for (let page = 0; page < pages; page += 1) {
+    for (;;) {
+      if (!unlimited && page >= pages) break;
       await wait(REQUEST_SPACING_MS);
       const params = { symbol, ...(endTime ? { endTime } : {}) };
       const response = await signedGet({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now });
@@ -112,6 +131,7 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
         });
         if (row) rows.push(row);
       }
+      page += 1;
       if (fills.length < FILLS_PER_PAGE) break;
       endTime = Math.min(...fills.map((fill) => Number(fill.timestamp))) - 1;
     }

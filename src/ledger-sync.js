@@ -1,7 +1,8 @@
 // Keeps the ledger (the portfolio and transactions tables) in step with the brokers, without any typing.
 //
-//   1. Every trade that the broker sync saved in broker_trades, and that is not in the ledger yet,
-//      is recorded as a Buy or Sell with the same rules as a typed entry (fees included in the cost).
+//   1. Every trade or transfer that the broker sync saved in broker_trades, and that is not in the ledger yet,
+//      is recorded as a Buy, Sell, Deposit or Cashout with the same rules as a typed entry (fees included in
+//      the cost). On-chain transfers (side='receive'/'send') are recorded at the current market price.
 //   2. The cash of Luno and Pionex is set to the balance the broker reports.
 //
 // Nothing is saved until the whole change has been worked out. Then the history lines are saved first
@@ -11,6 +12,7 @@
 // Pionex bots are left out by Pionex itself: its fills and balances cover non-strategy trading only.
 
 import { PRICE_API_URL, PRICE_CURRENCY, RATE_KEYS, USDT_COIN_ID } from '../public/js/config.js';
+import { getCoinIds } from '../public/js/logic/catalog.js';
 import { planEntry } from '../public/js/logic/ledger.js';
 import { toDatabaseRow, toPosition, toTransactionRow } from '../public/js/logic/rows.js';
 import { createDatabase } from './supabase.js';
@@ -28,13 +30,27 @@ const TRANSACTION_BATCH_SIZE = 200;
 const RATE_TIMEOUT_MS = 8000;
 const keyOf = (position) => `${position.broker}|${position.asset}`;
 
-async function loadUsdtRate(fetchImpl) {
+// Loads USDT rate AND all tracked crypto prices in MYR, so on-chain transfers can be valued.
+async function loadMarketPrices(fetchImpl) {
   try {
-    const url = `${PRICE_API_URL}?ids=${USDT_COIN_ID}&vs_currencies=${PRICE_CURRENCY}`;
+    // getCoinIds() returns all CoinGecko ids from the ASSET_CATALOG plus USDT_COIN_ID.
+    const ids = getCoinIds().join(',');
+    const url = `${PRICE_API_URL}?ids=${ids}&vs_currencies=${PRICE_CURRENCY}`;
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(RATE_TIMEOUT_MS) });
     if (!response.ok) return {};
-    const rate = Number((await response.json())?.[USDT_COIN_ID]?.[PRICE_CURRENCY]);
-    return Number.isFinite(rate) && rate > 0 ? { [RATE_KEYS.USDT]: rate } : {};
+    const data = await response.json();
+    // Build the marketPrices map: coinId -> MYR price, plus the RATE_KEYS entries for USDT/USD.
+    const prices = {};
+    for (const [coinId, rates] of Object.entries(data)) {
+      const myrPrice = Number(rates?.[PRICE_CURRENCY]);
+      if (Number.isFinite(myrPrice) && myrPrice > 0) {
+        prices[coinId] = myrPrice;
+      }
+    }
+    // Keep backward-compatible RATE_KEYS entry for USDT (used by planEntry for Pionex trades)
+    const usdtPrice = prices[USDT_COIN_ID];
+    if (usdtPrice) prices[RATE_KEYS.USDT] = usdtPrice;
+    return prices;
   } catch {
     return {};
   }
@@ -151,7 +167,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       database.select('transactions', 'select=external_id&external_id=not.is.null'),
       database.select('portfolio', 'select=*&order=id.asc'),
       database.select('broker_balances', 'select=broker,asset,qty'),
-      loadUsdtRate(fetchImpl),
+      loadMarketPrices(fetchImpl),
     ]);
 
     const positions = positionRows.map(toPosition);

@@ -7,7 +7,10 @@
 import { DISPLAY_TIME_ZONE, QUANTITY_DECIMALS } from '../public/js/config.js';
 import { QUANTITY_EPSILON } from '../public/js/logic/calculations.js';
 import { findAsset, findPosition } from '../public/js/logic/catalog.js';
+import { addUnits } from '../public/js/logic/ledger.js';
 import { planEntry } from '../public/js/logic/ledger.js';
+import { roundTo } from '../public/js/logic/calculations.js';
+import { MONEY_DECIMALS } from '../public/js/config.js';
 
 // 'YYYY-MM-DD' in the display time zone.
 export function toTradeDate(timestamp) {
@@ -19,7 +22,7 @@ function isTrackedTrade(trade) {
   return Boolean(entry && entry.category === 'Crypto' && entry.brokers.includes(trade.broker));
 }
 
-// Trades that are not in the ledger yet, oldest first. sinceDate ('YYYY-MM-DD') is optional.
+// Trades and transfers that are not in the ledger yet, oldest first. sinceDate ('YYYY-MM-DD') is optional.
 export function findNewTrades({ trades, importedIds, sinceDate = '' }) {
   const imported = new Set(importedIds);
   return trades
@@ -28,15 +31,21 @@ export function findNewTrades({ trades, importedIds, sinceDate = '' }) {
     .sort((a, b) => a.tradedAt - b.tradedAt || a.externalId.localeCompare(b.externalId));
 }
 
-// The same input the Add entry form would send for this trade.
-export function tradeToEntry(trade, { useCash }) {
+// The same input the Add entry form would send for a buy or sell trade.
+function tradeToEntry(trade, { useCash, marketPrices = {} }) {
+  let total = trade.cashAmount;
+  if (!total || total <= 0) {
+    const coinId = findAsset(trade.asset)?.coinId;
+    const price = coinId ? (marketPrices[coinId] ?? 0) : 0;
+    total = Math.max(0.01, roundTo(trade.qty * price, MONEY_DECIMALS));
+  }
   return {
     kind: trade.side,
     broker: trade.broker,
     asset: trade.asset,
     qty: trade.qty,
     entryMode: 'total',
-    total: trade.cashAmount,
+    total,
     fee: trade.feeQuote,
     useCash,
     tradeDate: toTradeDate(trade.tradedAt),
@@ -44,6 +53,9 @@ export function tradeToEntry(trade, { useCash }) {
     externalId: trade.externalId,
   };
 }
+
+// Export for tests.
+export { tradeToEntry };
 
 const keyOf = (position) => `${position.broker}|${position.asset}`;
 
@@ -81,6 +93,117 @@ function planOpeningBalance(trade, positions, marketPrices) {
   return { plan: planEntry(entry, { positions, marketPrices }), shortfall };
 }
 
+// ---------------------------------------------------------------------------
+// On-chain transfer handling:
+// - Transfer out from Luno (side === 'send' or 'transfer_to_pionex'):
+//   Coins are deducted from Luno and added into Pionex, carrying their
+//   proportional cost basis with 0 realised P/L.
+// - Crypto receive at Luno (side === 'receive'):
+//   Coins are deposited into Luno at market price (or cost if known).
+// ---------------------------------------------------------------------------
+function planCryptoTransfer(trade, positions, marketPrices) {
+  const isSend = trade.side === 'send' || trade.side === 'transfer_to_pionex';
+
+  if (isSend) {
+    // Coins leave Luno and go to Pionex
+    const lunoPos = findPosition(positions, 'Luno', trade.asset) ?? {
+      id: null, category: 'Crypto', broker: 'Luno', asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+    };
+    const pionexPos = findPosition(positions, 'Pionex', trade.asset) ?? {
+      id: null, category: 'Crypto', broker: 'Pionex', asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+    };
+
+    let currentLuno = lunoPos;
+    if (currentLuno.qty < trade.qty - QUANTITY_EPSILON) {
+      const shortfall = roundTo(trade.qty - currentLuno.qty, QUANTITY_DECIMALS);
+      const coinId = findAsset(trade.asset)?.coinId;
+      const price = coinId ? (marketPrices[coinId] ?? 0) : 0;
+      const addedCost = roundTo(shortfall * price, MONEY_DECIMALS);
+      currentLuno = {
+        ...currentLuno,
+        qty: roundTo(currentLuno.qty + shortfall, QUANTITY_DECIMALS),
+        costMyr: roundTo(currentLuno.costMyr + addedCost, MONEY_DECIMALS),
+      };
+    }
+
+    const avgCost = currentLuno.qty > 0 ? currentLuno.costMyr / currentLuno.qty : 0;
+    const transferCost = roundTo(Math.min(trade.qty, currentLuno.qty) * avgCost, MONEY_DECIMALS);
+    const remainingQty = roundTo(Math.max(0, currentLuno.qty - trade.qty), QUANTITY_DECIMALS);
+    const remainingCost = roundTo(Math.max(0, currentLuno.costMyr - transferCost), MONEY_DECIMALS);
+
+    const lunoAfter = {
+      ...currentLuno,
+      qty: remainingQty <= QUANTITY_EPSILON ? 0 : remainingQty,
+      costMyr: remainingQty <= QUANTITY_EPSILON ? 0 : remainingCost,
+    };
+
+    const pionexAfter = {
+      ...pionexPos,
+      qty: roundTo(pionexPos.qty + trade.qty, QUANTITY_DECIMALS),
+      costMyr: roundTo(pionexPos.costMyr + transferCost, MONEY_DECIMALS),
+    };
+
+    const changes = [
+      { before: lunoPos, after: lunoAfter },
+      { before: pionexPos, after: pionexAfter },
+    ];
+
+    const record = {
+      tradeDate: toTradeDate(trade.tradedAt),
+      kind: 'transfer',
+      broker: 'Luno',
+      asset: trade.asset,
+      qty: trade.qty,
+      price: avgCost,
+      currency: 'MYR',
+      fee: 0,
+      rate: 1,
+      totalMyr: transferCost,
+      fromAccount: `Luno ${trade.asset}`,
+      toAccount: `Pionex ${trade.asset}`,
+      amountFrom: trade.qty,
+      amountTo: trade.qty,
+      realisedPl: 0,
+      note: `Transferred ${trade.qty} ${trade.asset} from Luno to Pionex`,
+      externalId: trade.externalId,
+    };
+
+    return { changes, record };
+  }
+
+  // Receive: coins arrive at Luno from outside
+  const position = findPosition(positions, trade.broker, trade.asset) ?? {
+    id: null, category: 'Crypto', broker: trade.broker, asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+  };
+  const coinId = findAsset(trade.asset)?.coinId;
+  const price = trade.cashAmount > 0 ? trade.cashAmount / trade.qty : (coinId ? (marketPrices[coinId] ?? 0) : 0);
+  const costMyr = roundTo(trade.qty * price, MONEY_DECIMALS);
+  const after = addUnits(position, trade.qty, costMyr);
+
+  const changes = [{ before: position, after }];
+  const record = {
+    tradeDate: toTradeDate(trade.tradedAt),
+    kind: 'deposit',
+    broker: trade.broker,
+    asset: trade.asset,
+    qty: trade.qty,
+    price,
+    currency: 'MYR',
+    fee: 0,
+    rate: 1,
+    totalMyr: costMyr,
+    fromAccount: 'Outside',
+    toAccount: `${trade.broker} ${trade.asset}`,
+    amountFrom: trade.qty,
+    amountTo: trade.qty,
+    realisedPl: 0,
+    note: `Received ${trade.qty} ${trade.asset} at ${trade.broker}`,
+    externalId: trade.externalId,
+  };
+
+  return { changes, record };
+}
+
 // Works out what the ledger looks like after the trades, without saving anything.
 // A trade that cannot be recorded (for example a missing exchange rate) holds back only the later trades of the
 // same coin at the same broker, never the other coins, so one problem cannot block the whole history.
@@ -97,16 +220,24 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
     if (blocked.has(key)) continue;
 
     try {
-      const opening = planOpeningBalance(trade, current, marketPrices);
-      if (opening) {
-        current = applyChanges(current, opening.plan.changes);
-        records.push(opening.plan.record);
-        openingCount += 1;
+      if (trade.side === 'receive' || trade.side === 'send' || trade.side === 'transfer_to_pionex') {
+        const transfer = planCryptoTransfer(trade, current, marketPrices);
+        current = applyChanges(current, transfer.changes);
+        records.push(transfer.record);
+        importedIds.push(trade.externalId);
+      } else {
+        // Regular buy or sell trade
+        const opening = planOpeningBalance(trade, current, marketPrices);
+        if (opening) {
+          current = applyChanges(current, opening.plan.changes);
+          records.push(opening.plan.record);
+          openingCount += 1;
+        }
+        const plan = planEntry(tradeToEntry(trade, { useCash, marketPrices }), { positions: current, marketPrices });
+        current = applyChanges(current, plan.changes);
+        records.push(plan.record);
+        importedIds.push(trade.externalId);
       }
-      const plan = planEntry(tradeToEntry(trade, { useCash }), { positions: current, marketPrices });
-      current = applyChanges(current, plan.changes);
-      records.push(plan.record);
-      importedIds.push(trade.externalId);
     } catch (error) {
       blocked.set(key, `Held back the ${describeTrade(trade)}: ${error.message}`);
     }

@@ -3,23 +3,26 @@
 //
 // Secrets (set with "wrangler secret put" or in the Cloudflare dashboard, never in this repo):
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY            writes to the database
-//   LUNO_KEY_ID, LUNO_KEY_SECRET                  Luno, "View balance" only
+//   LUNO_KEY_ID, LUNO_KEY_SECRET                  Luno, "View balance" + "View orders" + "View transactions"
 //   PIONEX_API_KEY, PIONEX_API_SECRET             Pionex, "Read" only
 //   IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID           Interactive Brokers Flex Web Service (read-only report)
-// Optional plain variable: TRADES_BACKFILL = "true" reads the full trade history once (first-time import).
+// Optional plain variable: TRADES_BACKFILL = "true" reads the FULL trade + transfer history (first-time import).
 // Optional plain variable: SYNC_ALWAYS = "true" reads IBKR and Pionex on every run (for tests only).
 
 import { createDatabase } from '../supabase.js';
 import { fetchIbkrBalances } from './ibkr.js';
-import { fetchLunoBalances, fetchLunoTrades } from './luno.js';
+import { fetchLunoBalances, fetchLunoTrades, fetchLunoTransfers } from './luno.js';
 import { fetchPionexBalances, fetchPionexTrades } from './pionex.js';
 
 const BALANCES_TABLE = 'broker_balances';
 const STATUS_TABLE = 'broker_sync_status';
 const TRADES_TABLE = 'broker_trades';
 const TRADES_BATCH_SIZE = 200;
-const RECENT_PAGES = 1; // Every run reads the newest 100 trades of each coin.
-const BACKFILL_PAGES = 5; // With TRADES_BACKFILL="true", it reads up to 500 trades per coin (first-time import).
+
+// pages = 1 reads the newest 100 trades per coin per run (normal operation).
+// pages = 0 reads ALL available history page by page (backfill mode, unlimited).
+const RECENT_PAGES = 1;
+const BACKFILL_PAGES = 0; // 0 = unlimited; keep fetching until Luno/Pionex return a partial page.
 
 // IBKR reports the last business day, so it is read once every few hours, in the first run of that hour.
 // Pionex is read once an hour.
@@ -43,6 +46,8 @@ const BROKERS = Object.freeze([
     isConfigured: (env) => Boolean(env.LUNO_KEY_ID && env.LUNO_KEY_SECRET),
     read: (env, fetchImpl) => fetchLunoBalances({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl }),
     readTrades: (env, fetchImpl, pages) => fetchLunoTrades({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl, pages }),
+    // Transfers are read separately so a failure here never blocks the trade sync.
+    readTransfers: (env, fetchImpl, pages) => fetchLunoTransfers({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl, pages }),
   },
   {
     name: 'Pionex',
@@ -63,16 +68,34 @@ const BROKERS = Object.freeze([
 // Returns a short note for the status line ('' when all is well).
 async function syncTrades(broker, env, fetchImpl, database, wait) {
   if (!broker.readTrades) return '';
+  const notes = [];
   try {
     const pages = env.TRADES_BACKFILL === 'true' ? BACKFILL_PAGES : RECENT_PAGES;
     const trades = await broker.readTrades(env, fetchImpl, pages, wait);
     for (let start = 0; start < trades.length; start += TRADES_BATCH_SIZE) {
       await database.upsert(TRADES_TABLE, trades.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
     }
-    return trades.isLimited ? `Trades: Pionex rate limit reached (${trades.limitDetail}). The rest follows in the next run.` : '';
+    if (trades.isLimited) {
+      notes.push(`Pionex rate limit reached (${trades.limitDetail}). The rest follows in the next run.`);
+    }
   } catch (error) {
-    return `Trades: ${String(error.message ?? 'Unknown error.').slice(0, 150)}`;
+    notes.push(`Trades: ${String(error.message ?? 'Unknown error.').slice(0, 150)}`);
   }
+
+  // Also sync on-chain transfers for brokers that support it (currently Luno).
+  if (broker.readTransfers) {
+    try {
+      const pages = env.TRADES_BACKFILL === 'true' ? BACKFILL_PAGES : RECENT_PAGES;
+      const transfers = await broker.readTransfers(env, fetchImpl, pages);
+      for (let start = 0; start < transfers.length; start += TRADES_BATCH_SIZE) {
+        await database.upsert(TRADES_TABLE, transfers.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
+      }
+    } catch (error) {
+      notes.push(`Transfers: ${String(error.message ?? 'Unknown error.').slice(0, 120)}`);
+    }
+  }
+
+  return notes.join(' ');
 }
 
 // One broker failing never stops the others. Messages carry a status code only, never a key.
