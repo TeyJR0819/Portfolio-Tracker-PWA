@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { fetchIbkrBalances, parseFlexReport } from '../src/brokers/ibkr.js';
 import { fetchLunoBalances } from '../src/brokers/luno.js';
 import { fetchPionexBalances, sign } from '../src/brokers/pionex.js';
 import { runBrokerSync } from '../src/brokers/sync.js';
@@ -118,4 +119,72 @@ test('reconcile: matches, differences and missing rows, only for synced brokers'
   assert.equal(stateOf('ADA'), MATCH_STATES.missingAtBroker);
   assert.equal(stateOf('Luno Cash'), MATCH_STATES.missingInLedger);
   assert.equal(rows.length, 4, 'Pionex is not compared because it has no successful read');
+});
+
+// ---------- IBKR ----------
+
+const REPORT = `<FlexQueryResponse queryName="x" type="AF"><FlexStatements count="1"><FlexStatement accountId="U1">
+<OpenPositions>
+  <OpenPosition symbol="VOO" assetCategory="STK" position="2.5" currency="USD" levelOfDetail="SUMMARY" />
+  <OpenPosition symbol="VOO" assetCategory="STK" position="1" currency="USD" levelOfDetail="LOT" />
+  <OpenPosition symbol="QQQM" assetCategory="STK" position="0" currency="USD" levelOfDetail="SUMMARY" />
+</OpenPositions>
+<CashReport>
+  <CashReportCurrency currency="BASE_SUMMARY" endingCash="500" />
+  <CashReportCurrency currency="USD" endingCash="123.45" />
+  <CashReportCurrency currency="GBP" endingCash="10" />
+</CashReport></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+test('IBKR: report parsing counts summary lines once and names the cash accounts', () => {
+  assert.deepEqual(parseFlexReport(REPORT), [
+    { asset: 'VOO', qty: 2.5 }, { asset: 'IBKR Cash', qty: 123.45 }, { asset: 'IBKR Cash (GBP)', qty: 10 },
+  ]);
+});
+
+test('IBKR: sends the request, waits while the report is generated, then parses it', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (url.includes('SendRequest')) return new Response('<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF1</ReferenceCode><Url>https://evil.example.com/steal</Url></FlexStatementResponse>');
+    if (urls.filter((u) => u.includes('GetStatement') || u.includes('evil')).length < 2) {
+      return new Response('<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode><ErrorMessage>Statement generation in progress. Please try again shortly.</ErrorMessage></FlexStatementResponse>');
+    }
+    return new Response(REPORT);
+  };
+  const rows = await fetchIbkrBalances({ token: 'tok', queryId: '42', fetchImpl, wait: async () => {} });
+  assert.equal(rows.length, 3);
+  assert.match(urls[0], /SendRequest\?t=tok&q=42&v=3/);
+  assert.ok(urls.slice(1).every((url) => url.startsWith('https://ndcdyn.interactivebrokers.com/') && url.includes('q=REF1')), 'the token goes only to Interactive Brokers');
+});
+
+test('IBKR: a refused request reports the code and never the token', async () => {
+  const fetchImpl = async () => new Response('<FlexStatementResponse><Status>Fail</Status><ErrorCode>1012</ErrorCode><ErrorMessage>Token has expired.</ErrorMessage></FlexStatementResponse>');
+  await assert.rejects(fetchIbkrBalances({ token: 'SECRET-TOKEN', queryId: '42', fetchImpl, wait: async () => {} }), (error) => {
+    assert.match(error.message, /1012/);
+    assert.ok(!error.message.includes('SECRET-TOKEN'));
+    return true;
+  });
+});
+
+test('IBKR: gives up with a clear message when the report never finishes', async () => {
+  const fetchImpl = async (url) => new Response(url.includes('SendRequest')
+    ? '<FlexStatementResponse><Status>Success</Status><ReferenceCode>R</ReferenceCode></FlexStatementResponse>'
+    : '<FlexStatementResponse><Status>Warn</Status><ErrorCode>1019</ErrorCode></FlexStatementResponse>');
+  await assert.rejects(fetchIbkrBalances({ token: 't', queryId: '1', fetchImpl, wait: async () => {} }), /did not finish/);
+});
+
+test('sync: IBKR runs only in its scheduled hour unless IBKR_ALWAYS is set', async () => {
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', IBKR_FLEX_TOKEN: 't', IBKR_FLEX_QUERY_ID: '1' };
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes('SendRequest')) return new Response('<FlexStatementResponse><Status>Fail</Status><ErrorCode>1</ErrorCode></FlexStatementResponse>');
+    return new Response(null, { status: 204 });
+  };
+  const off = await runBrokerSync(env, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z') });
+  assert.deepEqual(off, []);
+  const on = await runBrokerSync(env, { fetchImpl, now: () => new Date('2026-10-30T06:05:00Z') });
+  assert.equal(on[0].broker, 'IBKR');
+  const forced = await runBrokerSync({ ...env, IBKR_ALWAYS: 'true' }, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z') });
+  assert.equal(forced[0].broker, 'IBKR');
 });

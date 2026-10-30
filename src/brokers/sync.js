@@ -5,12 +5,23 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY            writes to the database
 //   LUNO_KEY_ID, LUNO_KEY_SECRET                  Luno, "View balance" only
 //   PIONEX_API_KEY, PIONEX_API_SECRET             Pionex, "Read" only
+//   IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID           Interactive Brokers Flex Web Service (read-only report)
+// Optional plain variable: IBKR_ALWAYS = "true" reads IBKR on every run (for the first test only).
 
+import { fetchIbkrBalances } from './ibkr.js';
 import { fetchLunoBalances } from './luno.js';
 import { fetchPionexBalances } from './pionex.js';
 
 const BALANCES_TABLE = 'broker_balances';
 const STATUS_TABLE = 'broker_sync_status';
+
+// IBKR reports the last business day, so it is read once every few hours, in the first run of that hour.
+const IBKR_EVERY_HOURS = 6;
+const RUN_MINUTES = 15; // Matches the cron schedule in wrangler.toml.
+function isIbkrDue(env, now) {
+  if (env.IBKR_ALWAYS === 'true') return true;
+  return now.getUTCHours() % IBKR_EVERY_HOURS === 0 && now.getUTCMinutes() < RUN_MINUTES;
+}
 
 const BROKERS = Object.freeze([
   {
@@ -22,6 +33,12 @@ const BROKERS = Object.freeze([
     name: 'Pionex',
     isConfigured: (env) => Boolean(env.PIONEX_API_KEY && env.PIONEX_API_SECRET),
     read: (env, fetchImpl) => fetchPionexBalances({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl }),
+  },
+  {
+    name: 'IBKR',
+    isConfigured: (env) => Boolean(env.IBKR_FLEX_TOKEN && env.IBKR_FLEX_QUERY_ID),
+    isDue: isIbkrDue,
+    read: (env, fetchImpl) => fetchIbkrBalances({ token: env.IBKR_FLEX_TOKEN, queryId: env.IBKR_FLEX_QUERY_ID, fetchImpl }),
   },
 ]);
 
@@ -59,7 +76,9 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
   const database = createDatabase(env, fetchImpl);
   const outcomes = [];
 
-  for (const broker of BROKERS.filter((candidate) => candidate.isConfigured(env))) {
+  const runTime = now();
+  const due = BROKERS.filter((candidate) => candidate.isConfigured(env) && (candidate.isDue?.(env, runTime) ?? true));
+  for (const broker of due) {
     const syncedAt = now().toISOString();
     try {
       const balances = await broker.read(env, fetchImpl);

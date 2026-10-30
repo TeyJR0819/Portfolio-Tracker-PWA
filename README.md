@@ -36,7 +36,7 @@ public/                 The website. Cloudflare serves this folder as static fil
       views/            One file per tab
 src/worker.js           Cloudflare Worker entry point (routes /api/*)
 src/stocks.js           Stock quotes and exchange rates (Yahoo Finance, Finnhub)
-src/brokers/            Scheduled read-only sync of broker balances (Luno, Pionex)
+src/brokers/            Scheduled read-only sync of broker balances (Luno, Pionex, IBKR)
 sql/                    Database scripts to run in the Supabase SQL Editor
 tests/                  Unit tests
 wrangler.toml           Cloudflare settings
@@ -182,18 +182,22 @@ Keep in mind:
 - The sign-in session is stored in this browser. **Sign out** on the lock screen removes it and the saved copy of the data.
 - Never put a secret in the repository, in `wrangler.toml` or in the browser. Future broker keys will live only as Cloudflare secrets.
 
-## Broker sync (Luno and Pionex)
+## Broker sync (Luno, Pionex and IBKR)
 
-A Cloudflare Worker reads your Luno and Pionex balances every 15 minutes and saves them in Supabase. The **Broker check** card on the Summary tab compares them with your ledger. The page never sees a broker key, and the sync only reads: it cannot trade or withdraw.
+A Cloudflare Worker reads your Luno and Pionex balances every 15 minutes, and your IBKR positions every 6 hours, and saves them in Supabase. The **Broker check** card on the Summary tab compares them with your ledger. The page never sees a broker key, and the sync only reads: it cannot trade or withdraw.
 
 Do these steps in order.
 
 1. **Create the tables.** Open `sql/broker-sync.sql`, replace `PASTE-YOUR-USER-ID-HERE` with your User UID, and run it in the Supabase SQL Editor.
 2. **Create a Luno key.** In Luno, open **Settings > API Keys** and create a key with only **View balance** (`Perm_R_Balance`). Copy the key ID and the secret.
 3. **Create a Pionex key.** In Pionex, open **API Management** and create a key with **Read** permission only. Do not enable trading or withdrawal. Pionex offers an IP allowlist, but a Worker has no fixed address, so leave it empty and rely on the read-only permission.
-4. **Get the Supabase secret key.** Open **Project Settings > API Keys**. Copy the **secret** key (or the legacy `service_role` key). This key skips the database rules, so it must live only in Cloudflare and nowhere else.
-5. **Store the secrets in Cloudflare.** Open the Worker, then **Settings > Variables and secrets**, and add each of these as type **Secret**: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `LUNO_KEY_ID`, `LUNO_KEY_SECRET`, `PIONEX_API_KEY`, `PIONEX_API_SECRET`. Then deploy again. Never type them into a file, the chat or GitHub.
-6. **Wait up to 15 minutes**, then refresh the dashboard. The Broker check card shows each broker's last read time or its error. To test sooner, open the Worker in Cloudflare and use **Settings > Trigger Events > Cron Triggers**, or run `npx wrangler dev --test-scheduled` locally.
+4. **Create the IBKR report and token.** IBKR has no live read-only key. It offers a saved report (a Flex Query) and a token that can only run that report.
+   - In IBKR Client Portal, open **Performance & Reports > Flex Queries**. Create an **Activity Flex Query** with the sections **Open Positions** (tick **Summary** level, and fields Symbol, Quantity, Currency) and **Cash Report** (fields Currency, Ending Cash). Set the format to **XML** and save. Note the **Query ID**.
+   - Open **Flex Queries > Flex Web Service Configuration**, enable the service, and generate a token. Choose the **longest expiry** offered, because the default is only 6 hours. Copy the token. Leave the IP restriction empty (a Worker has no fixed address).
+   - The token expires. When the Broker check shows `1012` (token expired), generate a new one and update the secret.
+5. **Get the Supabase secret key.** Open **Project Settings > API Keys**. Copy the **secret** key (or the legacy `service_role` key). This key skips the database rules, so it must live only in Cloudflare and nowhere else.
+6. **Store the secrets in Cloudflare.** Open the Worker, then **Settings > Variables and secrets**, and add each of these as type **Secret**: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `LUNO_KEY_ID`, `LUNO_KEY_SECRET`, `PIONEX_API_KEY`, `PIONEX_API_SECRET`, `IBKR_FLEX_TOKEN`, `IBKR_FLEX_QUERY_ID`. Then deploy again. Never type them into a file, the chat or GitHub.
+7. **Wait up to 15 minutes**, then refresh the dashboard. The Broker check card shows each broker's last read time or its error. To test sooner, open the Worker in Cloudflare and use **Settings > Trigger Events > Cron Triggers**, or run `npx wrangler dev --test-scheduled` locally.
 
 How to read the result:
 
@@ -201,6 +205,8 @@ How to read the result:
 - **Differs:** the quantities disagree. Check for a missed entry, a fee, or a trade made outside the app.
 - **Not in ledger / Not at broker:** one side holds the asset and the other does not.
 - A broker whose last read failed is left out of the comparison, so old numbers never look current.
+
+IBKR reports the last business day, so a trade made today shows as **Differs** until the next report. To read IBKR on every run while testing, add a plain (not secret) variable `IBKR_ALWAYS` with the value `true`, then delete it afterwards.
 
 The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot and earn balances are not read, which matches the app's rules.
 
