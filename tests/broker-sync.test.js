@@ -308,3 +308,24 @@ test('sync: trades are saved, a trade failure is noted but the balances still co
   assert.match(outcomes[0].message, /Trades: Luno answered with status 500/);
   assert.ok(calls.some((call) => call.url.includes('broker_sync_status') && call.init.body.includes('"ok":true') && call.init.body.includes('Trades:')));
 });
+
+
+test('Pionex trades: retries on 429 status and succeeds on subsequent attempt', async () => {
+  let calls = 0;
+  const waits = [];
+  const fetchImpl = async (url) => {
+    if (String(url).includes('symbol=BTC_USDT')) {
+      calls += 1;
+      if (calls === 1) return new Response('Rate limited', { status: 429 });
+      return json({ result: true, data: { fills: [{ id: 99, side: 'BUY', price: '50000', size: '0.1', timestamp: 1761800000000 }] } });
+    }
+    return json({ result: false, code: 'TRADE_INVALID_SYMBOL' });
+  };
+  const wait = async (ms) => waits.push(ms);
+  const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait });
+  assert.equal(calls, 2);
+  assert.equal(waits.length, 1);
+  assert.equal(waits[0], 1000);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].external_id, 'pionex:99');
+});

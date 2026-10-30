@@ -36,8 +36,21 @@ async function signedGet({ path, params, apiKey, apiSecret, fetchImpl, now }) {
   });
 }
 
-export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now }) {
-  const response = await signedGet({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now });
+// Retries on status 429 (Too Many Requests) with exponential backoff.
+async function signedGetWithRetry({ path, params, apiKey, apiSecret, fetchImpl, now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await signedGet({ path, params, apiKey, apiSecret, fetchImpl, now });
+    if (response.status === 429 && attempt < maxAttempts) {
+      await wait(1000 * Math.pow(2, attempt - 1));
+      continue;
+    }
+    return response;
+  }
+}
+
+export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, wait }) {
+  const response = await signedGetWithRetry({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now, wait });
   if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
 
   const body = await response.json();
@@ -55,7 +68,7 @@ export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch
 
 // Reads the latest fills of every tracked coin against USDT. pages > 1 reads further back (first-time import).
 // Returns rows for the broker_trades table.
-export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, pages = 1 }) {
+export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, pages = 1, wait }) {
   const rows = [];
 
   for (const asset of TRADED_ASSETS) {
@@ -64,7 +77,7 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
 
     for (let page = 0; page < pages; page += 1) {
       const params = { symbol, ...(endTime ? { endTime } : {}) };
-      const response = await signedGet({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now });
+      const response = await signedGetWithRetry({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now, wait });
       const body = await response.json().catch(() => ({}));
       if (body.code === 'TRADE_INVALID_SYMBOL') break; // Pionex has no such market.
       if (!response.ok) throw new Error(`Pionex answered with status ${response.status} for trades.`);
