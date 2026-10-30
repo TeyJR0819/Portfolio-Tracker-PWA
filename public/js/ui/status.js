@@ -28,7 +28,7 @@ function buildNotices(state, holdings) {
   }
   if (dataInfo && !dataInfo.isOffline && state.positions.length === 0) {
     notices.push(
-      'Supabase returned no rows from the table "portfolio". If the table has data, a Row Level Security policy is blocking the read (see the README). Otherwise, choose Add transaction to enter your first holding.',
+      'Supabase returned no rows from the table "portfolio". If the table has data, a Row Level Security policy is blocking the read (see the README). Otherwise, choose Add entry to enter your first holding, or import your broker trades from the Summary tab.',
     );
   }
   if (priceInfo?.status === 'failed') {

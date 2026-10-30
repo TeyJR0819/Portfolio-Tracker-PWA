@@ -212,6 +212,30 @@ The comparison covers quantities only. Prices, costs and profit still come from 
 
 If a broker shows `status 401` or `403`, the key or its permission is wrong. Create it again and update the secret.
 
+## Import trades from Luno and Pionex
+
+The Worker also reads your trade history from Luno (BTC, ETH, ADA, LINK, SUI and TON against MYR) and Pionex (the same coins against USDT) and keeps it in the `broker_trades` table. The **Trades from your brokers** card on the Summary tab lists the trades that are not in your ledger yet. Choose **Import trades** to record them as normal Buy and Sell entries, with the fee included in the cost and the broker's trade ID written on each line. A trade can be imported only once, even if you press the button twice.
+
+Do these steps once:
+
+1. Run `sql/broker-sync.sql` again in the Supabase SQL Editor (with your User UID). It adds the `broker_trades` table and a trade ID column on `transactions`. The script is safe to run twice.
+2. To read the full history instead of only the newest 100 trades per coin, add the plain Cloudflare variable `TRADES_BACKFILL` with the value `true`, deploy, wait for one sync (15 minutes), then delete the variable and deploy again.
+3. Open the dashboard, press **Refresh**, and open the Summary tab.
+
+Choose the options with care:
+
+- **Starting from an empty ledger:** import every trade, and leave **Also change the broker's cash** off. Then set each cash account with **Adjust balance**. The cost of each holding then comes from your real trades.
+- **Ledger already has entries:** choose the date of your first missing trade in **Only trades from this date**. Trades before that date are skipped.
+- **Also change the broker's cash** deducts buys from, and adds sales to, the cash of that broker. Turn it on only when the cash balance already includes the money from before the first imported trade, otherwise the import stops with "holds ... but this purchase needs ...".
+- The import stops at the first trade it cannot record (for example a sale of coins that the ledger does not hold yet). It tells you which trade and why. The earlier trades stay recorded. Fix the cause, then press the button again.
+
+Limits you should know:
+
+- Deposits, withdrawals and transfers between exchanges are not imported. Enter them with **Deposit from outside**, **Cash out to outside** or **Transfer**.
+- A Pionex trade is converted from USDT to RM at today's rate, because the app keeps one rate. The cost of an old Pionex trade is therefore approximate.
+- A Pionex fee paid in another coin (for example a platform token) is not counted.
+- Coins outside the six above, and Pionex bot trades that the fills endpoint does not return, are not imported.
+
 ## Entries
 
 Choose **Add entry** and pick a type. Every entry can carry a date and a note.

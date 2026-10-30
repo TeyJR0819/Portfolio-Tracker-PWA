@@ -2,7 +2,7 @@
 // Database columns use snake_case; the rest of the app uses camelCase.
 // The two functions toPosition and toDatabaseRow translate between them.
 
-import { BROKER_BALANCES_TABLE, BROKER_SYNC_STATUS_TABLE, DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
+import { BROKER_BALANCES_TABLE, BROKER_SYNC_STATUS_TABLE, BROKER_TRADES_TABLE, DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
 import { localStore } from './storage.js';
 
 let client = null;
@@ -89,6 +89,7 @@ function toTransaction(row) {
     amountTo: toNumber(row.amount_to),
     realisedPl: toNumber(row.realised_pl),
     note: row.note ?? '',
+    externalId: row.external_id ?? '',
   };
 }
 
@@ -110,6 +111,7 @@ function toTransactionRow(record) {
     amount_to: record.amountTo,
     realised_pl: record.realisedPl,
     note: record.note,
+    external_id: record.externalId || null,
   };
 }
 
@@ -297,22 +299,53 @@ export async function loadTransactions() {
   }
 }
 
-// Reads what the Worker saved from the brokers. Never throws: the dashboard works without it.
-// An empty result means the sync is not set up yet (or the tables do not exist).
+// Reads every row of a query, a page at a time (Supabase returns at most 1000 rows per request).
+async function readAllRows(buildQuery) {
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...data);
+    if (data.length < pageSize) return rows;
+  }
+}
+
+function toBrokerTrade(row) {
+  return {
+    externalId: row.external_id,
+    broker: row.broker,
+    asset: row.asset,
+    side: row.side,
+    qty: toNumber(row.qty),
+    cashAmount: toNumber(row.cash_amount),
+    feeQuote: toNumber(row.fee_quote),
+    quoteCurrency: row.quote_currency,
+    tradedAt: Date.parse(row.traded_at),
+  };
+}
+
+// Reads what the Worker saved from the brokers, and which broker trades are already in the ledger.
+// Never throws: the dashboard works without it. An empty result means the sync is not set up yet.
 export async function loadBrokerSync() {
   try {
-    const [balances, statuses] = await Promise.all([
-      getClient().from(BROKER_BALANCES_TABLE).select('broker, asset, qty'),
-      getClient().from(BROKER_SYNC_STATUS_TABLE).select('broker, ok, message, synced_at'),
+    const client = getClient();
+    const [balances, statuses, trades, imported] = await Promise.all([
+      client.from(BROKER_BALANCES_TABLE).select('broker, asset, qty'),
+      client.from(BROKER_SYNC_STATUS_TABLE).select('broker, ok, message, synced_at'),
+      readAllRows(() => client.from(BROKER_TRADES_TABLE).select('*').order('traded_at', { ascending: true }).order('external_id', { ascending: true })),
+      readAllRows(() => client.from(TRANSACTIONS_TABLE).select('id, external_id').not('external_id', 'is', null).order('id', { ascending: true })),
     ]);
     if (balances.error) throw balances.error;
     if (statuses.error) throw statuses.error;
     return {
       balances: balances.data.map((row) => ({ broker: row.broker, asset: row.asset, qty: toNumber(row.qty) })),
       statuses: statuses.data.map((row) => ({ broker: row.broker, ok: row.ok, message: row.message, syncedAt: row.synced_at })),
+      trades: trades.map(toBrokerTrade),
+      importedIds: imported.map((row) => row.external_id),
     };
   } catch {
-    return { balances: [], statuses: [] };
+    return { balances: [], statuses: [], trades: [], importedIds: [] };
   }
 }
 

@@ -134,6 +134,7 @@ function buildRecord(input, fields) {
     amountTo: 0,
     realisedPl: 0,
     note: String(input.note ?? '').trim().slice(0, 200),
+    externalId: String(input.externalId ?? ''), // The broker's trade id for an imported trade, otherwise empty.
     ...fields,
   };
 }

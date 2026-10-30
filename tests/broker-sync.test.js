@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { fetchIbkrBalances, parseFlexReport } from '../src/brokers/ibkr.js';
-import { fetchLunoBalances } from '../src/brokers/luno.js';
-import { fetchPionexBalances, sign } from '../src/brokers/pionex.js';
+import { fetchLunoBalances, fetchLunoTrades } from '../src/brokers/luno.js';
+import { fetchPionexBalances, fetchPionexTrades, sign } from '../src/brokers/pionex.js';
 import { runBrokerSync } from '../src/brokers/sync.js';
+import { toTradeRow } from '../src/brokers/trades.js';
 import { MATCH_STATES, reconcileBalances } from '../public/js/logic/reconcile.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status });
@@ -200,4 +201,110 @@ test('sync: a database that rejects the key is reported, not hidden', async () =
   const fetchImpl = async (url) => (String(url).includes('supabase.co') ? new Response('{}', { status: 401 }) : new Response(JSON.stringify({ balance: [] })));
   const outcomes = await runBrokerSync({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'bad', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b' }, { fetchImpl });
   assert.ok(outcomes.some((outcome) => outcome.message.includes('SUPABASE_SERVICE_KEY')));
+});
+
+// ---------- Trade history ----------
+
+const trade = (overrides) => ({ externalId: 'x:1', broker: 'Luno', asset: 'BTC', side: 'buy', baseQty: 0.01, quoteAmount: 3000, quoteCurrency: 'MYR', tradedAt: 1761800000000, ...overrides });
+
+test('trade row: a buy costs the amount plus the fee, and a fee in the asset reduces the units', () => {
+  const withQuoteFee = toTradeRow(trade({ feeQuote: 7.5 }));
+  assert.equal(withQuoteFee.qty, 0.01);
+  assert.equal(withQuoteFee.cash_amount, 3007.5);
+  assert.equal(withQuoteFee.fee_quote, 7.5);
+
+  const withAssetFee = toTradeRow(trade({ feeBase: 0.00002 }));
+  assert.equal(withAssetFee.qty, 0.00998);
+  assert.equal(withAssetFee.cash_amount, 3000);
+});
+
+test('trade row: a sale pays the amount minus the fee, and an asset fee is counted in money', () => {
+  const sale = toTradeRow(trade({ side: 'sell', feeQuote: 6, feeBase: 0.00001 }));
+  assert.equal(sale.qty, 0.01);
+  assert.equal(sale.fee_quote, 6 + 0.00001 * 300000);
+  assert.equal(sale.cash_amount, 3000 - sale.fee_quote);
+});
+
+test('trade row: unusable trades are dropped', () => {
+  assert.equal(toTradeRow(trade({ baseQty: 0 })), null);
+  assert.equal(toTradeRow(trade({ quoteAmount: NaN })), null);
+  assert.equal(toTradeRow(trade({ externalId: '' })), null);
+});
+
+test('Luno trades: reads each coin against MYR, skips unknown pairs, never sends the secret in the address', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes('pair=XBTMYR')) {
+      return json({ trades: [
+        { sequence: 5, timestamp: 1761800000000, is_buy: true, volume: '0.01', counter: '3000', fee_base: '0', fee_counter: '4.5' },
+        { sequence: 6, timestamp: 1761800100000, is_buy: false, volume: '0.005', counter: '1500', fee_base: '0', fee_counter: '2' },
+      ] });
+    }
+    return json({}, 400);
+  };
+  const rows = await fetchLunoTrades({ keyId: 'id', keySecret: 'topsecret', fetchImpl });
+  assert.deepEqual(rows.map((r) => [r.external_id, r.side, r.qty, r.cash_amount]), [['luno:XBTMYR:5', 'buy', 0.01, 3004.5], ['luno:XBTMYR:6', 'sell', 0.005, 1498]]);
+  assert.ok(urls.every((url) => !url.includes('topsecret')));
+  assert.equal(urls.length, 6);
+});
+
+test('Luno trades: a refused key is an error, and a full page leads to the next page', async () => {
+  await assert.rejects(fetchLunoTrades({ keyId: 'a', keySecret: 'b', fetchImpl: async () => json({}, 403) }), /403/);
+
+  const pages = [];
+  const full = Array.from({ length: 100 }, (_, index) => ({ sequence: 1000 - index, timestamp: 1761800000000 - index, is_buy: true, volume: '0.01', counter: '10' }));
+  const fetchImpl = async (url) => {
+    if (!String(url).includes('pair=XBTMYR')) return json({ trades: [] });
+    pages.push(String(url));
+    return json({ trades: pages.length === 1 ? full : [] });
+  };
+  const rows = await fetchLunoTrades({ keyId: 'a', keySecret: 'b', fetchImpl, pages: 3 });
+  assert.equal(rows.length, 100);
+  assert.equal(pages.length, 2);
+  assert.match(pages[1], /before=1761799999901/);
+});
+
+test('Pionex trades: signed request per market, fee coin rules, unknown market skipped', async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push({ url: String(url), headers: init.headers });
+    if (String(url).includes('symbol=BTC_USDT')) {
+      return json({ result: true, data: { fills: [
+        { id: 11, side: 'BUY', price: '100000', size: '0.01', fee: '1.5', feeCoin: 'USDT', timestamp: 1761800000000 },
+        { id: 12, side: 'BUY', price: '100000', size: '0.01', fee: '0.00001', feeCoin: 'BTC', timestamp: 1761800001000 },
+        { id: 13, side: 'SELL', price: '100000', size: '0.01', fee: '1', feeCoin: 'USDT', timestamp: 1761800002000 },
+      ] } });
+    }
+    return json({ result: false, code: 'TRADE_INVALID_SYMBOL' });
+  };
+  const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000 });
+  assert.deepEqual(rows.map((r) => [r.external_id, r.side, r.qty, r.cash_amount]), [['pionex:11', 'buy', 0.01, 1001.5], ['pionex:12', 'buy', 0.00999, 1000], ['pionex:13', 'sell', 0.01, 999]]);
+  const first = seen[0];
+  assert.match(first.url, /fills\?symbol=BTC_USDT&timestamp=1761800005000$/);
+  assert.equal(first.headers['PIONEX-SIGNATURE'], await sign('s', 'GET/api/v1/trade/fills?symbol=BTC_USDT&timestamp=1761800005000'));
+});
+
+test('sync: trades are saved, a trade failure is noted but the balances still count as read', async () => {
+  const calls = [];
+  let tradesFail = false;
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).includes('listtrades')) {
+      return tradesFail ? json({}, 500) : json({ trades: [{ sequence: 1, timestamp: 1761800000000, is_buy: true, volume: '0.01', counter: '3000' }] });
+    }
+    if (String(url).startsWith('https://api.luno.com')) return json({ balance: [{ asset: 'XBT', balance: '1' }] });
+    return new Response(null, { status: 204 });
+  };
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b' };
+
+  await runBrokerSync(env, { fetchImpl });
+  assert.ok(calls.some((call) => call.url.includes('broker_trades?on_conflict=external_id') && call.init.body.includes('luno:XBTMYR:1')));
+
+  calls.length = 0;
+  tradesFail = true;
+  const outcomes = await runBrokerSync(env, { fetchImpl });
+  assert.equal(outcomes[0].ok, true);
+  assert.match(outcomes[0].message, /Trades: Luno answered with status 500/);
+  assert.ok(calls.some((call) => call.url.includes('broker_sync_status') && call.init.body.includes('"ok":true') && call.init.body.includes('Trades:')));
 });

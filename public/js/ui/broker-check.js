@@ -28,7 +28,8 @@ function describeStatuses(statuses) {
   return statuses
     .map((status) => {
       const time = new Date(status.syncedAt).toLocaleString();
-      return status.ok ? `${status.broker}: read ${time}` : `${status.broker}: failed at ${time} (${status.message})`;
+      if (!status.ok) return `${status.broker}: failed at ${time} (${status.message})`;
+      return status.message ? `${status.broker}: read ${time} (${status.message})` : `${status.broker}: read ${time}`;
     })
     .join('. ');
 }
