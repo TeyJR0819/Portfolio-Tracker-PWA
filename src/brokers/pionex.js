@@ -12,6 +12,7 @@ const BALANCE_PATH = '/api/v1/account/balances';
 const FILLS_PATH = '/api/v1/trade/fills';
 const FILLS_PER_PAGE = 100; // Pionex returns at most the latest 100 fills per request.
 const REQUEST_TIMEOUT_MS = 10000;
+const USER_AGENT = 'portfolio-tracker-worker/1.0';
 
 const ASSET_NAMES = Object.freeze({ USDT: 'Pionex Cash' });
 
@@ -31,7 +32,7 @@ async function signedGet({ path, params, apiKey, apiSecret, fetchImpl, now }) {
     .join('&');
   const signature = await sign(apiSecret, `GET${path}?${query}`);
   return fetchImpl(`${PIONEX_ORIGIN}${path}?${query}`, {
-    headers: { 'PIONEX-KEY': apiKey, 'PIONEX-SIGNATURE': signature },
+    headers: { 'PIONEX-KEY': apiKey, 'PIONEX-SIGNATURE': signature, 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 }
@@ -40,11 +41,18 @@ async function signedGet({ path, params, apiKey, apiSecret, fetchImpl, now }) {
 // spaced so the limit is never reached. After a 429 Pionex bans the account for 60 seconds, and every
 // further request during the ban makes it longer, so the code stops instead of retrying.
 const REQUEST_SPACING_MS = 700;
+// What Pionex said with a 429, in a short form for the status line (never contains a key).
+async function describeRateLimit(response) {
+  const body = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 100);
+  const retryAfter = response.headers.get('retry-after');
+  return `429${retryAfter ? `, retry after ${retryAfter}s` : ''}${body ? `, reply: ${body}` : ', no reply text'}`;
+}
+
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now }) {
   const response = await signedGet({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now });
-  if (response.status === 429) throw new Error('Pionex rate limit reached (429). It will be tried again in the next run.');
+  if (response.status === 429) throw new Error(`Pionex rate limit reached (${await describeRateLimit(response)}). It will be tried again in the next run.`);
   if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
 
   const body = await response.json();
@@ -66,6 +74,7 @@ export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch
 export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, pages = 1, wait = defaultWait }) {
   const rows = [];
   rows.isLimited = false;
+  rows.limitDetail = '';
 
   for (const asset of TRADED_ASSETS) {
     const symbol = `${asset}_USDT`;
@@ -77,6 +86,7 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
       const response = await signedGet({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now });
       if (response.status === 429) {
         rows.isLimited = true;
+        rows.limitDetail = await describeRateLimit(response);
         return rows;
       }
       const body = await response.json().catch(() => ({}));

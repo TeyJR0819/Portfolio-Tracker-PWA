@@ -173,25 +173,45 @@ test('ledger sync: a failed balance save undoes the history and the earlier bala
   assert.ok(!fake.data.portfolio.some((row) => row.id >= 1000), 'rows created by this run were removed');
 });
 
-test('ledger sync: stops at a sale the ledger cannot cover and records the trades before it', async () => {
+test('ledger sync: a sale with no earlier purchase gets an opening balance at the sale price, and later trades still go in', async () => {
   const tables = baseTables();
   tables.broker_trades = [
-    trade('luno:XBTMYR:1', { qty: 0.01 }),
-    trade('luno:XBTMYR:2', { side: 'sell', qty: 5, cash_amount: 9999, traded_at: new Date(T0 + DAY).toISOString() }),
-    trade('luno:XBTMYR:3', { traded_at: new Date(T0 + 2 * DAY).toISOString() }),
+    trade('luno:ADAMYR:1', { asset: 'ADA', side: 'sell', qty: 12.57, cash_amount: 25.14, traded_at: new Date(T0).toISOString() }),
+    trade('luno:XBTMYR:2', { qty: 0.01, cash_amount: 3000, traded_at: new Date(T0 + DAY).toISOString() }),
+    trade('luno:ADAMYR:3', { asset: 'ADA', qty: 100, cash_amount: 250, traded_at: new Date(T0 + 2 * DAY).toISOString() }),
   ];
   const fake = createFakeSupabase({ tables });
   const outcome = await run(fake);
-  assert.equal(outcome.ok, true);
+
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.match(outcome.message, /3 trades recorded/);
+  assert.match(outcome.message, /1 sale had no earlier purchase/);
+  const ada = find(fake.data, 'Luno', 'ADA');
+  assert.equal(ada.qty, 100, 'the 12.57 coins were added and sold again');
+  assert.equal(ada.cost_myr, 250);
+  assert.equal(ada.realised_pl, 0, 'no profit or loss on coins that had no recorded cost');
+  assert.equal(find(fake.data, 'Luno', 'BTC').qty, 0.01, 'the Bitcoin trade is not held back');
+  assert.ok(fake.data.transactions.some((row) => row.note === 'Opening balance: no purchase found in the history' && !row.external_id));
+});
+
+test('ledger sync: a problem with one coin holds back only that coin', async () => {
+  const tables = baseTables();
+  tables.broker_trades = [
+    trade('pionex:1', { broker: 'Pionex', quote_currency: 'USDT', qty: 0.001, cash_amount: 100 }),
+    trade('luno:XBTMYR:1', { traded_at: new Date(T0 + DAY).toISOString() }),
+  ];
+  const fake = createFakeSupabase({ tables, hooks: { noRate: true } });
+  const outcome = await run(fake);
   assert.match(outcome.message, /1 trade recorded/);
-  assert.match(outcome.message, /Stopped at the Luno sell of 5 BTC/);
-  assert.deepEqual(fake.data.transactions.filter((row) => row.external_id).map((row) => row.external_id), ['luno:XBTMYR:1']);
+  assert.match(outcome.message, /Held back the Pionex buy/);
+  assert.equal(find(fake.data, 'Luno', 'BTC').qty, 0.01);
+  assert.ok(!find(fake.data, 'Pionex', 'BTC'));
 });
 
 test('ledger sync: without an exchange rate the Pionex trades wait and the rest still works', async () => {
   const fake = createFakeSupabase({ tables: baseTables(), hooks: { noRate: true } });
   const outcome = await run(fake);
-  assert.match(outcome.message, /3 trades recorded|2 trades recorded/);
+  assert.match(outcome.message, /2 trades recorded/);
   assert.match(outcome.message, /rate is not available/);
   assert.ok(!fake.data.transactions.some((row) => row.external_id === 'pionex:7'));
 });

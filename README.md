@@ -209,7 +209,7 @@ How to read the result:
 - **Not in ledger / Not at broker:** one side holds the asset and the other does not.
 - A broker whose last read failed is left out of the comparison, so old numbers never look current.
 
-IBKR reports the last business day, so a trade made today shows as **Differs** until the next report. To read IBKR on every run while testing, add a plain (not secret) variable `IBKR_ALWAYS` with the value `true`, then delete it afterwards.
+IBKR reports the last business day, so a trade made today shows as **Differs** until the next report. To read IBKR on every run while testing, add a plain (not secret) variable `SYNC_ALWAYS` with the value `true`, then delete it afterwards.
 
 The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot and earn balances are not read, which matches the app's rules.
 
@@ -219,7 +219,7 @@ If a broker shows `status 401` or `403`, the key or its permission is wrong. Cre
 
 You do not enter these trades by hand. Two Worker runs keep your ledger up to date:
 
-1. Every 15 minutes the Worker reads your balances and your newest trades from Luno and Pionex (BTC, ETH, ADA, LINK, SUI and TON) and saves them in `broker_balances` and `broker_trades`.
+1. Every 15 minutes (Pionex once an hour) the Worker reads your balances and your newest trades from Luno and Pionex (BTC, ETH, ADA, LINK, SUI and TON) and saves them in `broker_balances` and `broker_trades`.
 2. Seven minutes later a second run records every new trade in your ledger as a Buy or Sell, with fees included in the cost and the broker's trade ID written on the line. It then sets **Luno Cash** and **Pionex Cash** to the balance the broker reports.
 
 The Summary and Transactions tabs show the result at your next refresh. The Broker check card lists the status of each run, including a **Ledger** line.
@@ -237,7 +237,8 @@ Rules the sync follows:
 
 - A trade is recorded only once, even if two runs overlap. The database refuses a second line with the same trade ID.
 - The whole change is worked out first. If a save fails, everything done in that run is undone.
-- The sync stops at the first trade it cannot record, for example a sale of coins that the ledger does not hold because the earlier buy lies beyond the history that was read. The **Ledger** line names the trade. Run the backfill, or add the earlier entry by hand, and the next run continues.
+- A sale of more coins than the ledger holds means the coins came from somewhere the history does not show (a deposit, staking, an older trade). The sync first adds the missing coins at the price they were sold for, so the sale shows no profit or loss on them, and notes this on the **Ledger** line ("... had no earlier purchase"). The Transactions tab shows these lines with the note "Opening balance". To give those coins a real cost, enter your own Buy for them.
+- A trade that cannot be recorded (for example a missing exchange rate) holds back only the later trades of the same coin at the same broker. The **Ledger** line names it.
 - Cash is set to the broker balance, so the Cash tab always matches Luno and Pionex. Money you move in or out needs no entry for these two accounts.
 
 Limits you should know:
@@ -249,7 +250,7 @@ Limits you should know:
 - If you add an entry by hand at the same moment a sync runs, the later save can overwrite the earlier one. Refresh before you add an entry.
 - The Worker is limited in how many outside requests one run may make. The sync therefore saves each changed balance once and all history lines in one request, so a large first import fits in one run.
 
-**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker pauses 0.7 seconds before each request. If Pionex still answers 429, the Worker stops at once (a retry would extend Pionex's 60-second ban) and finishes in the next run. The Broker check line then says "rate limit reached".
+**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker reads Pionex once an hour, pauses 0.7 seconds before each request, and identifies itself with a User-Agent. If Pionex still answers 429, the Worker stops at once (a retry would extend Pionex's 60-second ban) and tries again in the next hourly run. The Broker check line then shows what Pionex replied, for example the retry time. To test Pionex outside the hourly run, add the plain Cloudflare variable `SYNC_ALWAYS` with the value `true` (it also makes IBKR run every time), then delete it afterwards.
 
 ## Entries
 

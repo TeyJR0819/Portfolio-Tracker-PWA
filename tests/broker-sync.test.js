@@ -66,7 +66,7 @@ function createFakeNetwork({ lunoStatus = 200 } = {}) {
   };
   return { calls, fetchImpl };
 }
-const baseEnv = { SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SERVICE_KEY: 'sb_secret_abc', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b', PIONEX_API_KEY: 'c', PIONEX_API_SECRET: 'd' };
+const baseEnv = { SYNC_ALWAYS: 'true', SUPABASE_URL: 'https://x.supabase.co/', SUPABASE_SERVICE_KEY: 'sb_secret_abc', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b', PIONEX_API_KEY: 'c', PIONEX_API_SECRET: 'd' };
 
 test('sync: writes balances and status, uses the service key, removes stale rows', async () => {
   const { calls, fetchImpl } = createFakeNetwork();
@@ -337,8 +337,26 @@ test('sync: a Pionex rate limit is noted, the partial trades are saved, and bala
     if (String(url).startsWith('https://api.pionex.com')) return json({ result: true, data: { balances: [{ coin: 'USDT', free: '5', frozen: '0' }] } });
     return new Response(null, { status: 204 });
   };
-  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
+  const env = { SYNC_ALWAYS: 'true', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
   const outcomes = await runBrokerSync(env, { fetchImpl, wait: async () => {} });
   assert.equal(outcomes[0].ok, true);
   assert.match(outcomes[0].message, /rate limit/);
+});
+
+test('Pionex 429: the message carries what Pionex said, so the cause can be read', async () => {
+  const fetchImpl = async () => new Response('{"message":"too many requests from this address"}', { status: 429, headers: { 'retry-after': '60' } });
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 'SECRET-VALUE', fetchImpl }), (error) => {
+    assert.match(error.message, /retry after 60s/);
+    assert.match(error.message, /too many requests from this address/);
+    assert.ok(!error.message.includes('SECRET-VALUE'));
+    return true;
+  });
+});
+
+test('sync: Pionex is read once an hour (first run of the hour), unless SYNC_ALWAYS is set', async () => {
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
+  const fetchImpl = async (url) => (String(url).startsWith('https://api.pionex.com') ? json({ result: true, data: { balances: [] } }) : new Response(null, { status: 204 }));
+  assert.deepEqual(await runBrokerSync(env, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z'), wait: async () => {} }), []);
+  assert.equal((await runBrokerSync(env, { fetchImpl, now: () => new Date('2026-10-30T07:05:00Z'), wait: async () => {} }))[0].broker, 'Pionex');
+  assert.equal((await runBrokerSync({ ...env, SYNC_ALWAYS: 'true' }, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z'), wait: async () => {} }))[0].broker, 'Pionex');
 });

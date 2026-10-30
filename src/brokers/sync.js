@@ -7,7 +7,7 @@
 //   PIONEX_API_KEY, PIONEX_API_SECRET             Pionex, "Read" only
 //   IBKR_FLEX_TOKEN, IBKR_FLEX_QUERY_ID           Interactive Brokers Flex Web Service (read-only report)
 // Optional plain variable: TRADES_BACKFILL = "true" reads the full trade history once (first-time import).
-// Optional plain variable: IBKR_ALWAYS = "true" reads IBKR on every run (for the first test only).
+// Optional plain variable: SYNC_ALWAYS = "true" reads IBKR and Pionex on every run (for tests only).
 
 import { createDatabase } from '../supabase.js';
 import { fetchIbkrBalances } from './ibkr.js';
@@ -22,11 +22,19 @@ const RECENT_PAGES = 1; // Every run reads the newest 100 trades of each coin.
 const BACKFILL_PAGES = 5; // With TRADES_BACKFILL="true", it reads up to 500 trades per coin (first-time import).
 
 // IBKR reports the last business day, so it is read once every few hours, in the first run of that hour.
+// Pionex is read once an hour.
 const IBKR_EVERY_HOURS = 6;
 const RUN_MINUTES = 15; // Matches the cron schedule in wrangler.toml.
+function isFirstRunOfHour(now) {
+  return now.getUTCMinutes() < RUN_MINUTES;
+}
 function isIbkrDue(env, now) {
-  if (env.IBKR_ALWAYS === 'true') return true;
-  return now.getUTCHours() % IBKR_EVERY_HOURS === 0 && now.getUTCMinutes() < RUN_MINUTES;
+  if (env.IBKR_ALWAYS === 'true' || env.SYNC_ALWAYS === 'true') return true;
+  return now.getUTCHours() % IBKR_EVERY_HOURS === 0 && isFirstRunOfHour(now);
+}
+// Pionex limits requests per account and per address. Once an hour keeps the Worker well below both.
+function isPionexDue(env, now) {
+  return env.SYNC_ALWAYS === 'true' || isFirstRunOfHour(now);
 }
 
 const BROKERS = Object.freeze([
@@ -39,6 +47,7 @@ const BROKERS = Object.freeze([
   {
     name: 'Pionex',
     isConfigured: (env) => Boolean(env.PIONEX_API_KEY && env.PIONEX_API_SECRET),
+    isDue: isPionexDue,
     read: (env, fetchImpl) => fetchPionexBalances({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl }),
     readTrades: (env, fetchImpl, pages, wait) => fetchPionexTrades({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl, pages, wait }),
   },
@@ -60,7 +69,7 @@ async function syncTrades(broker, env, fetchImpl, database, wait) {
     for (let start = 0; start < trades.length; start += TRADES_BATCH_SIZE) {
       await database.upsert(TRADES_TABLE, trades.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
     }
-    return trades.isLimited ? 'Trades: Pionex rate limit reached. The rest follows in the next run.' : '';
+    return trades.isLimited ? `Trades: Pionex rate limit reached (${trades.limitDetail}). The rest follows in the next run.` : '';
   } catch (error) {
     return `Trades: ${String(error.message ?? 'Unknown error.').slice(0, 150)}`;
   }

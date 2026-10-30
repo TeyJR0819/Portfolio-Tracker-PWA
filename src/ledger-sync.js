@@ -120,9 +120,10 @@ async function undoTransactions(database, ids) {
   if (ids.length > 0) await database.remove('transactions', `id=in.(${ids.join(',')})`);
 }
 
-function describeResult({ tradeCount, cashChanges, notes, stopMessage }) {
+function describeResult({ tradeCount, openingCount, cashChanges, notes, stopMessage }) {
   const parts = [];
   if (tradeCount > 0) parts.push(`${tradeCount} ${tradeCount === 1 ? 'trade' : 'trades'} recorded`);
+  if (openingCount > 0) parts.push(`${openingCount} ${openingCount === 1 ? 'sale' : 'sales'} had no earlier purchase in the history, so those coins were counted at the sale price (no profit or loss)`);
   if (cashChanges > 0) parts.push(`${cashChanges} cash ${cashChanges === 1 ? 'balance' : 'balances'} synced`);
   if (stopMessage) parts.push(stopMessage);
   parts.push(...notes);
@@ -181,7 +182,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       : {
           broker: LEDGER_STATUS_NAME,
           ok: true,
-          message: describeResult({ tradeCount: tradePlan.records.length, cashChanges: cashPlan.records.length, notes: cashPlan.notes, stopMessage: tradePlan.message }),
+          message: describeResult({ tradeCount: tradePlan.importedIds.length, openingCount: tradePlan.openingCount, cashChanges: cashPlan.records.length, notes: cashPlan.notes, stopMessage: tradePlan.message }),
         };
   } catch (error) {
     outcome = { broker: LEDGER_STATUS_NAME, ok: false, message: `Ledger sync failed (${String(error.message ?? 'unknown error').slice(0, 150)}).` };

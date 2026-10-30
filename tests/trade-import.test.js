@@ -73,15 +73,34 @@ test('plan: with the cash option on, the broker cash moves too', () => {
   assert.equal(result.positions.find((p) => p.asset === 'Luno Cash').qty, 2000);
 });
 
-test('plan: stops at a sale the ledger cannot cover and keeps the earlier trades', () => {
+test('plan: a sale of coins the ledger never bought is covered by an opening balance at the sale price', () => {
+  const result = planTradeImport({ trades: [trade('1', { side: 'sell', qty: 0.5, cashAmount: 1000 }), trade('2', { qty: 0.01, tradedAt: T0 + DAY })], positions: [], marketPrices: RATES });
+  assert.equal(result.message, '');
+  assert.deepEqual(result.importedIds, ['1', '2']);
+  assert.equal(result.openingCount, 1);
+  assert.equal(result.records.length, 3, 'opening line, the sale, then the later buy');
+  assert.match(result.records[0].note, /Opening balance/);
+  const btc = result.positions.find((p) => p.asset === 'BTC');
+  assert.equal(btc.qty, 0.01);
+  assert.equal(btc.realisedPl, 0);
+});
+
+test('plan: a partly covered sale adds only the missing coins', () => {
   const result = planTradeImport({
-    trades: [trade('1', { qty: 0.01 }), trade('2', { side: 'sell', qty: 0.5, tradedAt: T0 + DAY }), trade('3', { tradedAt: T0 + 2 * DAY })],
+    trades: [trade('1', { qty: 0.1, cashAmount: 300 }), trade('2', { side: 'sell', qty: 0.3, cashAmount: 900, tradedAt: T0 + DAY })],
     positions: [], marketPrices: RATES,
   });
-  assert.deepEqual(result.importedIds, ['1']);
-  assert.equal(result.records.length, 1, 'the third trade is not planned on top of the missing second one');
-  assert.match(result.message, /Stopped at the Luno sell of 0.5 BTC on 2026-10-02/);
-  assert.match(result.message, /1 trade was recorded before it/);
+  assert.equal(result.records[1].qty, 0.2, 'opening line for the 0.2 that was never bought');
+  assert.equal(result.positions.find((p) => p.asset === 'BTC').qty, 0);
+});
+
+test('plan: a problem holds back only the same coin at the same broker', () => {
+  const result = planTradeImport({
+    trades: [trade('p1', { broker: 'Pionex', quoteCurrency: 'USDT' }), trade('p2', { broker: 'Pionex', quoteCurrency: 'USDT', tradedAt: T0 + DAY }), trade('l1', { asset: 'ETH', tradedAt: T0 + 2 * DAY })],
+    positions: [], marketPrices: {},
+  });
+  assert.deepEqual(result.importedIds, ['l1']);
+  assert.match(result.message, /Held back the Pionex buy/);
 });
 
 test('plan: a missing exchange rate is reported instead of guessing', () => {

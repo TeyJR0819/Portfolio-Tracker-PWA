@@ -4,8 +4,9 @@
 // The Worker (src/ledger-sync.js) saves the result.
 // Pure logic, tested in tests/trade-import.test.js.
 
-import { DISPLAY_TIME_ZONE } from '../public/js/config.js';
-import { findAsset } from '../public/js/logic/catalog.js';
+import { DISPLAY_TIME_ZONE, QUANTITY_DECIMALS } from '../public/js/config.js';
+import { QUANTITY_EPSILON } from '../public/js/logic/calculations.js';
+import { findAsset, findPosition } from '../public/js/logic/catalog.js';
 import { planEntry } from '../public/js/logic/ledger.js';
 
 // 'YYYY-MM-DD' in the display time zone.
@@ -61,26 +62,56 @@ function describeTrade(trade) {
   return `${trade.broker} ${trade.side} of ${trade.qty} ${trade.asset} on ${toTradeDate(trade.tradedAt)}`;
 }
 
+const OPENING_NOTE = 'Opening balance: no purchase found in the history';
+
+// A sale of more coins than the ledger holds means the coins came from somewhere the history does not show
+// (a deposit, staking, an older trade). The missing coins are added first, at the price they were sold for,
+// so the sale shows no profit or loss on them and the later trades are not blocked.
+function planOpeningBalance(trade, positions, marketPrices) {
+  if (trade.side !== 'sell') return null;
+  const held = findPosition(positions, trade.broker, trade.asset)?.qty ?? 0;
+  const shortfall = Number((trade.qty - held).toFixed(QUANTITY_DECIMALS));
+  if (shortfall <= QUANTITY_EPSILON) return null;
+
+  const entry = {
+    kind: 'buy', broker: trade.broker, asset: trade.asset, qty: shortfall, entryMode: 'total',
+    total: shortfall * (trade.cashAmount / trade.qty), fee: 0, useCash: false,
+    tradeDate: toTradeDate(trade.tradedAt), note: OPENING_NOTE, externalId: '',
+  };
+  return { plan: planEntry(entry, { positions, marketPrices }), shortfall };
+}
+
 // Works out what the ledger looks like after the trades, without saving anything.
-// Stops at the first trade that cannot be recorded (for example a sale of coins the ledger does not hold),
-// so a later trade is never recorded on top of a missing earlier one.
-// Returns { positions, records, importedIds, message }. message is empty when every trade was planned.
+// A trade that cannot be recorded (for example a missing exchange rate) holds back only the later trades of the
+// same coin at the same broker, never the other coins, so one problem cannot block the whole history.
+// Returns { positions, records, importedIds, openingCount, message }. message is empty when all went well.
 export function planTradeImport({ trades, positions, marketPrices, useCash = false }) {
   let current = positions;
   const records = [];
   const importedIds = [];
+  const blocked = new Map(); // "broker|asset" -> the first problem
+  let openingCount = 0;
 
   for (const trade of trades) {
+    const key = `${trade.broker}|${trade.asset}`;
+    if (blocked.has(key)) continue;
+
     try {
+      const opening = planOpeningBalance(trade, current, marketPrices);
+      if (opening) {
+        current = applyChanges(current, opening.plan.changes);
+        records.push(opening.plan.record);
+        openingCount += 1;
+      }
       const plan = planEntry(tradeToEntry(trade, { useCash }), { positions: current, marketPrices });
       current = applyChanges(current, plan.changes);
       records.push(plan.record);
       importedIds.push(trade.externalId);
     } catch (error) {
-      const earlier = importedIds.length;
-      const note = earlier > 0 ? ` ${earlier} ${earlier === 1 ? 'trade was' : 'trades were'} recorded before it.` : '';
-      return { positions: current, records, importedIds, message: `Stopped at the ${describeTrade(trade)}. ${error.message}${note}` };
+      blocked.set(key, `Held back the ${describeTrade(trade)}: ${error.message}`);
     }
   }
-  return { positions: current, records, importedIds, message: '' };
+
+  const problems = [...blocked.values()].slice(0, 2).join(' ');
+  return { positions: current, records, importedIds, openingCount, message: problems };
 }
