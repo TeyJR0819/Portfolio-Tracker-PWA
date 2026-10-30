@@ -1,4 +1,5 @@
 // First-time setup: asks for the Supabase details and a new PIN.
+// When the Worker already supplies the Supabase details, only the PIN is asked.
 
 import { isValidDatabaseUrl, isValidPin, saveCredentials, startSession } from '../services/auth.js';
 import { testConnection } from '../services/database.js';
@@ -11,6 +12,7 @@ export function initSetupWizard({ onComplete }) {
   const submitButton = byId('setup-submit');
   const errorBox = byId('setup-error');
   const pinInputs = [byId('setup-pin'), byId('setup-pin-confirm')];
+  const databaseFields = document.querySelectorAll('[data-database-field]');
 
   function showError(message) {
     errorBox.textContent = message;
@@ -77,5 +79,21 @@ export function initSetupWizard({ onComplete }) {
     onComplete();
   });
 
-  return { show: () => overlay.open({ focusSelector: '#setup-url' }) };
+  // shared: { databaseUrl, databaseKey } from the Worker, or null to ask for them.
+  function show(shared = null) {
+    databaseFields.forEach((field) => {
+      field.hidden = Boolean(shared);
+    });
+    byId('setup-title').textContent = shared ? 'Create your PIN' : 'Connect your portfolio';
+    byId('setup-text').textContent = shared
+      ? 'The PIN locks the dashboard on this device. You sign in with your email and password next.'
+      : 'These details stay in this browser. They are never saved in the code or on GitHub.';
+    if (shared) {
+      byId('setup-url').value = shared.databaseUrl;
+      byId('setup-key').value = shared.databaseKey;
+    }
+    overlay.open({ focusSelector: shared ? '#setup-pin' : '#setup-url' });
+  }
+
+  return { show };
 }

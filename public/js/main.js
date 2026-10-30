@@ -1,7 +1,7 @@
 // Entry point. It decides which screen to show and connects the parts of the app.
 //
 // Start-up flow:
-//   no saved credentials  -> setup wizard -> dashboard
+//   no saved credentials  -> setup wizard (PIN only when the Worker supplies the Supabase details) -> sign-in -> dashboard
 //   saved, session open   -> dashboard
 //   saved, session closed -> lock screen  -> dashboard
 
@@ -14,6 +14,7 @@ import {
   hasCredentials,
   isSessionActive,
 } from './services/auth.js';
+import { loadSharedConfig } from './services/app-config.js';
 import { cachePositions, connectDatabase, getSession, loadBrokerSync, loadPositions, loadTransactions } from './services/database.js';
 import { loadMarketPrices } from './services/prices.js';
 import { registerServiceWorker } from './services/service-worker-registration.js';
@@ -230,7 +231,7 @@ function handleActionClick(event) {
 
 // ---------- Start-up ----------
 
-function boot() {
+async function boot() {
   registerServiceWorker();
 
   if (!window.Chart || !window.supabase) {
@@ -258,7 +259,7 @@ function boot() {
   subscribe(render);
   document.addEventListener('click', handleActionClick);
 
-  if (!hasCredentials()) setupWizard.show();
+  if (!hasCredentials()) setupWizard.show(await loadSharedConfig());
   else if (isSessionActive()) startDashboard();
   else lockScreen.show();
 }

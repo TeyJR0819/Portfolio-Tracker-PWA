@@ -196,7 +196,7 @@ Do these steps in order.
    - Open **Flex Queries > Flex Web Service Configuration**, enable the service, and generate a token. Choose the **longest expiry** offered, because the default is only 6 hours. Copy the token. Leave the IP restriction empty (a Worker has no fixed address).
    - The token expires. When the Broker check shows `1012` (token expired), generate a new one and update the secret.
 5. **Get the Supabase secret key.** Open **Project Settings > API Keys**. Copy the **secret** key (or the legacy `service_role` key). This key skips the database rules, so it must live only in Cloudflare and nowhere else.
-6. **Store the secrets in Cloudflare.** Open the Worker, then **Settings > Variables and secrets**, and add each of these as type **Secret**: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `LUNO_KEY_ID`, `LUNO_KEY_SECRET`, `PIONEX_API_KEY`, `PIONEX_API_SECRET`, `IBKR_FLEX_TOKEN`, `IBKR_FLEX_QUERY_ID`. Then deploy again. Never type them into a file, the chat or GitHub.
+6. **Store the secrets in Cloudflare.** Open the Worker, then **Settings > Variables and secrets**, and add each of these as type **Secret**: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (the anon public key, so visitors need not type it), `SUPABASE_SERVICE_KEY`, `LUNO_KEY_ID`, `LUNO_KEY_SECRET`, `PIONEX_API_KEY`, `PIONEX_API_SECRET`, `IBKR_FLEX_TOKEN`, `IBKR_FLEX_QUERY_ID`. Then deploy again. Never type them into a file, the chat or GitHub.
 7. **Wait up to 15 minutes**, then refresh the dashboard. The Broker check card shows each broker's last read time or its error. To test sooner, open the Worker in Cloudflare and use **Settings > Trigger Events > Cron Triggers**, or run `npx wrangler dev --test-scheduled` locally.
 
 How to read the result:
@@ -242,7 +242,9 @@ The switch in the header only changes how amounts are shown. The database always
 
 ## First launch
 
-Enter the Supabase URL, the anon key and a 4-digit PIN. The app tests the connection before it saves anything. Repeat this once on each device.
+Each new device asks once for a 4-digit PIN, then for your email and password.
+
+This works when the Worker has the secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` (the **anon public** key). The Worker then gives these two public values to the page through `/api/config`, and nobody types them. The route returns only those two values, never the service key or a broker key. Without both secrets the route is absent, and the first screen asks for the URL and the anon key instead (this is also how local use and GitHub Pages work).
 
 ## Making changes
 

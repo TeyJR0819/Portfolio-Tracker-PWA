@@ -3,7 +3,7 @@
 // To release an update: change CACHE_VERSION below. Phones then fetch fresh files.
 // Live data (Supabase and CoinGecko) is never cached here; the app handles that itself.
 
-const CACHE_VERSION = 'v8';
+const CACHE_VERSION = 'v9';
 const CACHE_NAME = `portfolio-shell-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -24,6 +24,7 @@ const APP_FILES = [
   './js/logic/ledger.js',
   './js/logic/quotes.js',
   './js/logic/reconcile.js',
+  './js/services/app-config.js',
   './js/services/auth.js',
   './js/services/database.js',
   './js/services/prices.js',

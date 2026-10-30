@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { getStockQuotes, handleStocksRequest } from '../src/stocks.js';
+import { handleConfigRequest } from '../src/worker.js';
 
 function yahooAnswer(price, currency) {
   return { ok: true, json: async () => ({ chart: { result: [{ meta: { regularMarketPrice: price, currency } }] } }) };
@@ -69,4 +70,13 @@ test('the endpoint rejects missing, invalid and too many symbols', async () => {
   assert.equal((await ask('')).status, 400);
   assert.equal((await ask('?symbols=VOO;DROP')).status, 400);
   assert.equal((await ask('?symbols=A,B,C,D,E,F,G,H,I,J,K')).status, 400);
+});
+
+test('config route: gives only the two public values, and is absent without them', async () => {
+  const env = { SUPABASE_URL: 'https://abc.supabase.co/', SUPABASE_ANON_KEY: 'anon-key-value', SUPABASE_SERVICE_KEY: 'service-secret', LUNO_KEY_SECRET: 'x' };
+  const response = handleConfigRequest(env);
+  assert.deepEqual(await response.json(), { databaseUrl: 'https://abc.supabase.co', databaseKey: 'anon-key-value' });
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+
+  assert.equal(handleConfigRequest({ SUPABASE_URL: 'https://abc.supabase.co' }).status, 404);
 });

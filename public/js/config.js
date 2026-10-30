@@ -20,6 +20,8 @@ export const PRICE_API_URL = 'https://api.coingecko.com/api/v3/simple/price';
 export const PRICE_CURRENCY = 'myr';
 // Stock quotes come from our own Cloudflare function (Yahoo Finance, with Finnhub as a backup).
 export const STOCK_API_PATH = './api/stocks';
+// Public Supabase details supplied by the Worker, so visitors only choose a PIN and sign in.
+export const CONFIG_API_PATH = './api/config';
 export const USDT_COIN_ID = 'tether'; // Gives the USDT to RM rate used for Pionex.
 export const PRICE_CACHE_SECONDS = 120;
 export const PRICE_REQUEST_TIMEOUT_MS = 8000;

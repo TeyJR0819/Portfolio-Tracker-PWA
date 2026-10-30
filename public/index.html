@@ -329,15 +329,15 @@
     <div class="overlay overlay-center" id="setup-wizard" role="dialog" aria-modal="true" aria-labelledby="setup-title" hidden>
       <div class="overlay-panel">
         <h2 class="overlay-title" id="setup-title">Connect your portfolio</h2>
-        <p class="overlay-text">These details stay in this browser. They are never saved in the code or on GitHub.</p>
+        <p class="overlay-text" id="setup-text">These details stay in this browser. They are never saved in the code or on GitHub.</p>
 
         <form class="form" id="setup-form" novalidate autocomplete="off">
-          <div class="field">
+          <div class="field" data-database-field>
             <label for="setup-url">Supabase project URL</label>
             <input id="setup-url" type="url" inputmode="url" placeholder="https://your-project.supabase.co" autocapitalize="off" spellcheck="false" />
             <p class="field-help">Supabase, Project Settings, API, Project URL.</p>
           </div>
-          <div class="field">
+          <div class="field" data-database-field>
             <label for="setup-key">Supabase anon key</label>
             <input id="setup-key" type="text" placeholder="Paste the public anon key" autocapitalize="off" spellcheck="false" />
             <p class="field-help">Use the anon public key only. Never paste the service role key.</p>
