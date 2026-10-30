@@ -188,3 +188,16 @@ test('sync: IBKR runs only in its scheduled hour unless IBKR_ALWAYS is set', asy
   const forced = await runBrokerSync({ ...env, IBKR_ALWAYS: 'true' }, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z') });
   assert.equal(forced[0].broker, 'IBKR');
 });
+
+test('sync: names the missing secrets so the cause is clear', async () => {
+  const none = await runBrokerSync({ SUPABASE_URL: 'https://x.supabase.co' }, { fetchImpl: async () => new Response(null, { status: 204 }) });
+  assert.match(none[0].message, /SUPABASE_SERVICE_KEY/);
+  const noBroker = await runBrokerSync({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k' }, { fetchImpl: async () => new Response(null, { status: 204 }) });
+  assert.match(noBroker[0].message, /No broker secrets/);
+});
+
+test('sync: a database that rejects the key is reported, not hidden', async () => {
+  const fetchImpl = async (url) => (String(url).includes('supabase.co') ? new Response('{}', { status: 401 }) : new Response(JSON.stringify({ balance: [] })));
+  const outcomes = await runBrokerSync({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'bad', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b' }, { fetchImpl });
+  assert.ok(outcomes.some((outcome) => outcome.message.includes('SUPABASE_SERVICE_KEY')));
+});

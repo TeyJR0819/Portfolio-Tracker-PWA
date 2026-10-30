@@ -71,12 +71,14 @@ function createDatabase(env, fetchImpl) {
 
 // One broker failing never stops the others. Messages carry a status code only, never a key.
 export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Date() } = {}) {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return [{ broker: 'all', ok: false, message: 'Database secrets are missing.' }];
+  const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].filter((name) => !env[name]);
+  if (missing.length > 0) return [{ broker: 'all', ok: false, message: `Missing secrets: ${missing.join(', ')}.` }];
 
   const database = createDatabase(env, fetchImpl);
   const outcomes = [];
 
   const runTime = now();
+  if (!BROKERS.some((candidate) => candidate.isConfigured(env))) return [{ broker: 'all', ok: false, message: 'No broker secrets are set.' }];
   const due = BROKERS.filter((candidate) => candidate.isConfigured(env) && (candidate.isDue?.(env, runTime) ?? true));
   for (const broker of due) {
     const syncedAt = now().toISOString();
@@ -93,7 +95,8 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
       try {
         await database.upsert(STATUS_TABLE, [{ broker: broker.name, ok: false, message, synced_at: syncedAt }], 'broker');
       } catch {
-        // The status line cannot be saved either. The Worker log still shows the outcome.
+        // The status line cannot be saved either (for example a wrong service key). The Worker log shows it.
+        outcomes.push({ broker: `${broker.name} (status)`, ok: false, message: 'The sync status could not be saved to the database. Check SUPABASE_URL and SUPABASE_SERVICE_KEY.' });
       }
     }
   }

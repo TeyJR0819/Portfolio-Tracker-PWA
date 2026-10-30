@@ -36,6 +36,7 @@ export default {
   async scheduled(event, env, context) {
     context.waitUntil(
       runBrokerSync(env).then((outcomes) => {
+        if (outcomes.length === 0) console.log('sync: nothing was due in this run.');
         for (const outcome of outcomes) console.log(`sync ${outcome.broker}: ${outcome.ok ? 'ok' : outcome.message}`);
       }),
     );
