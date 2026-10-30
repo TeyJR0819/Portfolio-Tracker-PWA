@@ -9,6 +9,7 @@
 // Optional plain variable: TRADES_BACKFILL = "true" reads the full trade history once (first-time import).
 // Optional plain variable: IBKR_ALWAYS = "true" reads IBKR on every run (for the first test only).
 
+import { createDatabase } from '../supabase.js';
 import { fetchIbkrBalances } from './ibkr.js';
 import { fetchLunoBalances, fetchLunoTrades } from './luno.js';
 import { fetchPionexBalances, fetchPionexTrades } from './pionex.js';
@@ -18,7 +19,7 @@ const STATUS_TABLE = 'broker_sync_status';
 const TRADES_TABLE = 'broker_trades';
 const TRADES_BATCH_SIZE = 200;
 const RECENT_PAGES = 1; // Every run reads the newest 100 trades of each coin.
-const BACKFILL_PAGES = 30; // With TRADES_BACKFILL="true", it reads up to 3000 per coin (first-time import).
+const BACKFILL_PAGES = 5; // With TRADES_BACKFILL="true", it reads up to 500 trades per coin (first-time import).
 
 // IBKR reports the last business day, so it is read once every few hours, in the first run of that hour.
 const IBKR_EVERY_HOURS = 6;
@@ -39,7 +40,7 @@ const BROKERS = Object.freeze([
     name: 'Pionex',
     isConfigured: (env) => Boolean(env.PIONEX_API_KEY && env.PIONEX_API_SECRET),
     read: (env, fetchImpl) => fetchPionexBalances({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl }),
-    readTrades: (env, fetchImpl, pages) => fetchPionexTrades({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl, pages }),
+    readTrades: (env, fetchImpl, pages, wait) => fetchPionexTrades({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl, pages, wait }),
   },
   {
     name: 'IBKR',
@@ -49,51 +50,24 @@ const BROKERS = Object.freeze([
   },
 ]);
 
-function createDatabase(env, fetchImpl) {
-  const origin = env.SUPABASE_URL.replace(/\/+$/, '');
-  // Legacy service keys are JWTs and also go in Authorization. New "sb_secret_" keys go in apikey only.
-  const headers = { apikey: env.SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' };
-  if (env.SUPABASE_SERVICE_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${env.SUPABASE_SERVICE_KEY}`;
-
-  async function send(path, init) {
-    const response = await fetchImpl(`${origin}/rest/v1/${path}`, { ...init, headers: { ...headers, ...init.headers } });
-    if (!response.ok) throw new Error(`Database answered with status ${response.status}.`);
-  }
-
-  return {
-    upsert: (table, rows, conflictColumns) =>
-      send(`${table}?on_conflict=${conflictColumns}`, {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(rows),
-      }),
-    // Removes rows of one broker that this run did not return (for example a sold-out asset).
-    deleteOlder: (table, broker, syncedAt) =>
-      send(`${table}?broker=eq.${encodeURIComponent(broker)}&synced_at=lt.${encodeURIComponent(syncedAt)}`, {
-        method: 'DELETE',
-        headers: { Prefer: 'return=minimal' },
-      }),
-  };
-}
-
 // Saves the trades of a broker that offers them. A trade problem never marks the balances as failed.
 // Returns a short note for the status line ('' when all is well).
-async function syncTrades(broker, env, fetchImpl, database) {
+async function syncTrades(broker, env, fetchImpl, database, wait) {
   if (!broker.readTrades) return '';
   try {
     const pages = env.TRADES_BACKFILL === 'true' ? BACKFILL_PAGES : RECENT_PAGES;
-    const trades = await broker.readTrades(env, fetchImpl, pages);
+    const trades = await broker.readTrades(env, fetchImpl, pages, wait);
     for (let start = 0; start < trades.length; start += TRADES_BATCH_SIZE) {
       await database.upsert(TRADES_TABLE, trades.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
     }
-    return '';
+    return trades.isLimited ? 'Trades: Pionex rate limit reached. The rest follows in the next run.' : '';
   } catch (error) {
     return `Trades: ${String(error.message ?? 'Unknown error.').slice(0, 150)}`;
   }
 }
 
 // One broker failing never stops the others. Messages carry a status code only, never a key.
-export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Date() } = {}) {
+export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Date(), wait } = {}) {
   const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].filter((name) => !env[name]);
   if (missing.length > 0) return [{ broker: 'all', ok: false, message: `Missing secrets: ${missing.join(', ')}.` }];
 
@@ -110,7 +84,7 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
       const rows = balances.map(({ asset, qty }) => ({ broker: broker.name, asset, qty, synced_at: syncedAt }));
       if (rows.length > 0) await database.upsert(BALANCES_TABLE, rows, 'broker,asset');
       await database.deleteOlder(BALANCES_TABLE, broker.name, syncedAt);
-      const tradeNote = await syncTrades(broker, env, fetchImpl, database);
+      const tradeNote = await syncTrades(broker, env, fetchImpl, database, wait);
       await database.upsert(STATUS_TABLE, [{ broker: broker.name, ok: true, message: tradeNote, synced_at: syncedAt }], 'broker');
       outcomes.push({ broker: broker.name, ok: true, message: tradeNote });
     } catch (error) {

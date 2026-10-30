@@ -310,22 +310,35 @@ test('sync: trades are saved, a trade failure is noted but the balances still co
 });
 
 
-test('Pionex trades: retries on 429 status and succeeds on subsequent attempt', async () => {
-  let calls = 0;
+test('Pionex trades: requests are spaced, and a 429 stops everything without a retry', async () => {
   const waits = [];
+  const urls = [];
   const fetchImpl = async (url) => {
-    if (String(url).includes('symbol=BTC_USDT')) {
-      calls += 1;
-      if (calls === 1) return new Response('Rate limited', { status: 429 });
-      return json({ result: true, data: { fills: [{ id: 99, side: 'BUY', price: '50000', size: '0.1', timestamp: 1761800000000 }] } });
-    }
-    return json({ result: false, code: 'TRADE_INVALID_SYMBOL' });
+    urls.push(String(url));
+    if (String(url).includes('symbol=BTC_USDT')) return json({ result: true, data: { fills: [{ id: 1, side: 'BUY', price: '50000', size: '0.1', fee: '0', feeCoin: 'USDT', timestamp: 1761800000000 }] } });
+    return new Response('Too many requests', { status: 429 });
   };
-  const wait = async (ms) => waits.push(ms);
-  const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait });
-  assert.equal(calls, 2);
-  assert.equal(waits.length, 1);
-  assert.equal(waits[0], 1000);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].external_id, 'pionex:99');
+  const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait: async (ms) => waits.push(ms) });
+  assert.equal(rows.isLimited, true);
+  assert.deepEqual(rows.map((r) => r.external_id), ['pionex:1'], 'what was read before the limit is kept');
+  assert.equal(urls.length, 2, 'no request after the 429, and no retry of it');
+  assert.deepEqual(waits, [700, 700], 'a pause before every request');
+});
+
+test('Pionex balances: a 429 gives a clear message', async () => {
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => new Response('', { status: 429 }) }), /rate limit/);
+});
+
+test('sync: a Pionex rate limit is noted, the partial trades are saved, and balances still count as read', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).includes('fills')) return new Response('', { status: 429 });
+    if (String(url).startsWith('https://api.pionex.com')) return json({ result: true, data: { balances: [{ coin: 'USDT', free: '5', frozen: '0' }] } });
+    return new Response(null, { status: 204 });
+  };
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
+  const outcomes = await runBrokerSync(env, { fetchImpl, wait: async () => {} });
+  assert.equal(outcomes[0].ok, true);
+  assert.match(outcomes[0].message, /rate limit/);
 });

@@ -46,7 +46,6 @@ import {
   showFatalError,
 } from './ui/status.js';
 import { initTabs } from './ui/tabs.js';
-import { initTradeImport } from './ui/trade-import.js';
 import { showToast } from './ui/toast.js';
 import { VIEWS } from './ui/views/index.js';
 import { initTransactionsView } from './ui/views/transactions-view.js';
@@ -254,7 +253,6 @@ async function boot() {
   });
 
   initCurrencyToggle({ onChange: changeDisplayCurrency });
-  initTradeImport();
   initTransactionsView({ onFilter: render });
   updateState({ displayCurrency: localStore.getText(STORAGE_KEYS.displayCurrency) === 'USD' ? 'USD' : 'MYR' });
 

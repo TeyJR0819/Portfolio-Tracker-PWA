@@ -13,6 +13,7 @@ run_worker_first = ["/api/*"]
 [observability]
 enabled = true
 
-# Reads broker balances every 15 minutes (see src/brokers/sync.js).
+# Every 15 minutes the brokers are read (src/brokers/sync.js). Seven minutes later the ledger is
+# updated from what was read (src/ledger-sync.js). Keep the second schedule equal to LEDGER_CRON in src/worker.js.
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "7-59/15 * * * *"]

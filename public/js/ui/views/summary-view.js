@@ -4,7 +4,6 @@ import { formatNumber, formatPercent, formatSignedAmount, formatSignedMoney, get
 import { upsertDonut } from '../charts.js';
 import { setMetric } from '../metrics.js';
 import { renderBrokerCheck } from '../broker-check.js';
-import { renderTradeImport } from '../trade-import.js';
 import { renderTable } from '../table.js';
 
 function createColumns(totalValue) {
@@ -77,5 +76,4 @@ export function renderSummaryView({ holdings, summary, positions, brokerSync }) 
   });
 
   renderBrokerCheck({ positions, brokerSync });
-  renderTradeImport({ brokerSync });
 }

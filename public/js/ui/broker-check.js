@@ -28,8 +28,9 @@ function describeStatuses(statuses) {
   return statuses
     .map((status) => {
       const time = new Date(status.syncedAt).toLocaleString();
+      const action = status.broker === 'Ledger' ? 'updated' : 'read';
       if (!status.ok) return `${status.broker}: failed at ${time} (${status.message})`;
-      return status.message ? `${status.broker}: read ${time} (${status.message})` : `${status.broker}: read ${time}`;
+      return status.message ? `${status.broker}: ${action} ${time} (${status.message})` : `${status.broker}: ${action} ${time}`;
     })
     .join('. ');
 }

@@ -36,7 +36,10 @@ public/                 The website. Cloudflare serves this folder as static fil
       views/            One file per tab
 src/worker.js           Cloudflare Worker entry point (routes /api/*)
 src/stocks.js           Stock quotes and exchange rates (Yahoo Finance, Finnhub)
-src/brokers/            Scheduled read-only sync of broker balances (Luno, Pionex, IBKR)
+src/brokers/            Scheduled read-only sync of broker balances and trades (Luno, Pionex, IBKR)
+src/ledger-sync.js      Records new broker trades in the ledger and sets Luno and Pionex cash
+src/trade-import.js     Turns broker trades into ledger entries (pure logic)
+src/supabase.js         Database client used by the Worker (service key, never in the browser)
 sql/                    Database scripts to run in the Supabase SQL Editor
 tests/                  Unit tests
 wrangler.toml           Cloudflare settings
@@ -212,29 +215,41 @@ The comparison covers quantities only. Prices, costs and profit still come from 
 
 If a broker shows `status 401` or `403`, the key or its permission is wrong. Create it again and update the secret.
 
-## Import trades from Luno and Pionex
+## Automatic ledger from Luno and Pionex trades
 
-The Worker also reads your trade history from Luno (BTC, ETH, ADA, LINK, SUI and TON against MYR) and Pionex (the same coins against USDT) and keeps it in the `broker_trades` table. The **Trades from your brokers** card on the Summary tab lists the trades that are not in your ledger yet. Choose **Import trades** to record them as normal Buy and Sell entries, with the fee included in the cost and the broker's trade ID written on each line. A trade can be imported only once, even if you press the button twice.
+You do not enter these trades by hand. Two Worker runs keep your ledger up to date:
+
+1. Every 15 minutes the Worker reads your balances and your newest trades from Luno and Pionex (BTC, ETH, ADA, LINK, SUI and TON) and saves them in `broker_balances` and `broker_trades`.
+2. Seven minutes later a second run records every new trade in your ledger as a Buy or Sell, with fees included in the cost and the broker's trade ID written on the line. It then sets **Luno Cash** and **Pionex Cash** to the balance the broker reports.
+
+The Summary and Transactions tabs show the result at your next refresh. The Broker check card lists the status of each run, including a **Ledger** line.
+
+**Pionex bots.** Pionex's own API leaves bot (strategy) trades out of both its fills and its balances, so bot money never enters the ledger.
 
 Do these steps once:
 
-1. Run `sql/broker-sync.sql` again in the Supabase SQL Editor (with your User UID). It adds the `broker_trades` table and a trade ID column on `transactions`. The script is safe to run twice.
-2. To read the full history instead of only the newest 100 trades per coin, add the plain Cloudflare variable `TRADES_BACKFILL` with the value `true`, deploy, wait for one sync (15 minutes), then delete the variable and deploy again.
-3. Open the dashboard, press **Refresh**, and open the Summary tab.
+1. Run `sql/broker-sync.sql` again in the Supabase SQL Editor (with your User UID). It adds the `broker_trades` table and a trade ID column on `transactions`. It is safe to run twice.
+2. Deploy. Cloudflare registers both schedules from `wrangler.toml`.
+3. To read your **full history** instead of only the newest 100 trades per coin, add the plain Cloudflare variable `TRADES_BACKFILL` with the value `true`. Deploy, wait for two cycles (about 30 minutes), then delete the variable and deploy again. The backfill reads up to 500 trades per coin.
+4. Open the dashboard and press **Refresh**.
 
-Choose the options with care:
+Rules the sync follows:
 
-- **Starting from an empty ledger:** import every trade, and leave **Also change the broker's cash** off. Then set each cash account with **Adjust balance**. The cost of each holding then comes from your real trades.
-- **Ledger already has entries:** choose the date of your first missing trade in **Only trades from this date**. Trades before that date are skipped.
-- **Also change the broker's cash** deducts buys from, and adds sales to, the cash of that broker. Turn it on only when the cash balance already includes the money from before the first imported trade, otherwise the import stops with "holds ... but this purchase needs ...".
-- The import stops at the first trade it cannot record (for example a sale of coins that the ledger does not hold yet). It tells you which trade and why. The earlier trades stay recorded. Fix the cause, then press the button again.
+- A trade is recorded only once, even if two runs overlap. The database refuses a second line with the same trade ID.
+- The whole change is worked out first. If a save fails, everything done in that run is undone.
+- The sync stops at the first trade it cannot record, for example a sale of coins that the ledger does not hold because the earlier buy lies beyond the history that was read. The **Ledger** line names the trade. Run the backfill, or add the earlier entry by hand, and the next run continues.
+- Cash is set to the broker balance, so the Cash tab always matches Luno and Pionex. Money you move in or out needs no entry for these two accounts.
 
 Limits you should know:
 
-- Deposits, withdrawals and transfers between exchanges are not imported. Enter them with **Deposit from outside**, **Cash out to outside** or **Transfer**.
-- A Pionex trade is converted from USDT to RM at today's rate, because the app keeps one rate. The cost of an old Pionex trade is therefore approximate.
+- Deposits, withdrawals and transfers between exchanges are not imported as separate lines. Their effect on cash is covered by the cash sync, but the coins you move between exchanges, or deposit from a wallet, have no cost in the ledger. Enter those with **Transfer** or **Buy** (with "Deduct from cash" off).
+- A Pionex trade is converted from USDT to RM at the rate of the day of the sync, because the app keeps one rate. The cost of an old Pionex trade is therefore approximate.
 - A Pionex fee paid in another coin (for example a platform token) is not counted.
-- Coins outside the six above, and Pionex bot trades that the fills endpoint does not return, are not imported.
+- Coins outside the six above are not imported.
+- If you add an entry by hand at the same moment a sync runs, the later save can overwrite the earlier one. Refresh before you add an entry.
+- The Worker is limited in how many outside requests one run may make. The sync therefore saves each changed balance once and all history lines in one request, so a large first import fits in one run.
+
+**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker pauses 0.7 seconds before each request. If Pionex still answers 429, the Worker stops at once (a retry would extend Pionex's 60-second ban) and finishes in the next run. The Broker check line then says "rate limit reached".
 
 ## Entries
 

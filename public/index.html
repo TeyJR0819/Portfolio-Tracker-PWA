@@ -176,24 +176,6 @@
             <p class="card-note" id="broker-check-status"></p>
             <div class="table-scroll"><table class="data-table" id="table-broker-check"></table></div>
           </article>
-
-          <article class="card" id="trade-import" hidden>
-            <h3 class="card-title">Trades from your brokers</h3>
-            <p class="card-note" id="trade-import-summary"></p>
-            <form class="form" id="trade-import-form" novalidate>
-              <div class="field">
-                <label for="trade-import-since">Only trades from this date (optional)</label>
-                <input id="trade-import-since" type="date" />
-                <p class="field-help">Leave empty to import every trade. Choose a date if you already entered the earlier ones yourself.</p>
-              </div>
-              <label class="checkbox">
-                <input type="checkbox" id="trade-import-cash" />
-                <span>Also change the broker's cash</span>
-              </label>
-              <p class="field-help">Leave this off when you set your cash with Adjust balance, otherwise the old trades would be counted twice.</p>
-              <button class="button button-primary" type="submit" id="trade-import-submit">Import trades</button>
-            </form>
-          </article>
         </section>
 
         <!-- Cash -->
