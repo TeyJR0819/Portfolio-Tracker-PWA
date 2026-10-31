@@ -1,22 +1,22 @@
 // Keeps the ledger (the portfolio and transactions tables) in step with the brokers, without any typing.
 //
-//   1. Every trade or transfer that the broker sync saved in broker_trades, and that is not in the ledger yet,
-//      is recorded as a Buy, Sell, Deposit or Cashout with the same rules as a typed entry (fees included in
-//      the cost). On-chain transfers (side='receive'/'send') are recorded at the current market price.
-//   2. The cash of Luno and Pionex is set to the balance the broker reports.
-//
-// Nothing is saved until the whole change has been worked out. Then the history lines are saved first
-// (a unique trade id stops any trade being recorded twice), then each changed balance once.
-// If a save fails, everything done in this run is undone.
-//
-// Pionex bots are left out by Pionex itself: its fills and balances cover non-strategy trading only.
+//   1. Any previously imported Luno inflow/transfer rows whose cost or side was updated by the latest
+//      Luno sync (for example an early Instant Buy that now has its true MYR cost from the MYR wallet,
+//      or a staking principal move that was paired and removed) are reconciled cleanly.
+//   2. Every trade, Instant Buy, staking reward or transfer that the broker sync saved in broker_trades,
+//      and that is not in the ledger yet, is recorded with the same rules as a typed entry.
+//   3. Luno crypto balances are verified against Luno's reported balance (normal + staking combined).
+//      Any residual staking reward gap is added at RM 0.00 cost so Ledger always matches Broker says.
+//   4. The cash of Luno and Pionex is set to the balance the broker reports.
 
-import { PRICE_API_URL, PRICE_CURRENCY, RATE_KEYS, USDT_COIN_ID } from '../public/js/config.js';
-import { getCoinIds } from '../public/js/logic/catalog.js';
-import { planEntry } from '../public/js/logic/ledger.js';
+import { MONEY_DECIMALS, PRICE_API_URL, PRICE_CURRENCY, QUANTITY_DECIMALS, RATE_KEYS, USDT_COIN_ID } from '../public/js/config.js';
+import { QUANTITY_EPSILON, roundTo } from '../public/js/logic/calculations.js';
+import { getCoinIds, findPosition } from '../public/js/logic/catalog.js';
+import { addUnits, planEntry } from '../public/js/logic/ledger.js';
 import { toDatabaseRow, toPosition, toTransactionRow } from '../public/js/logic/rows.js';
 import { createDatabase } from './supabase.js';
 import { applyChanges, findNewTrades, planTradeImport, toTradeDate } from './trade-import.js';
+import { TRADED_ASSETS } from './brokers/trades.js';
 
 export const LEDGER_STATUS_NAME = 'Ledger';
 
@@ -28,18 +28,17 @@ const CASH_ACCOUNTS = Object.freeze([
 
 const TRANSACTION_BATCH_SIZE = 200;
 const RATE_TIMEOUT_MS = 8000;
+const RECONCILE_TOLERANCE = 1e-6;
 const keyOf = (position) => `${position.broker}|${position.asset}`;
 
 // Loads USDT rate AND all tracked crypto prices in MYR, so on-chain transfers can be valued.
 async function loadMarketPrices(fetchImpl) {
   try {
-    // getCoinIds() returns all CoinGecko ids from the ASSET_CATALOG plus USDT_COIN_ID.
     const ids = getCoinIds().join(',');
     const url = `${PRICE_API_URL}?ids=${ids}&vs_currencies=${PRICE_CURRENCY}`;
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(RATE_TIMEOUT_MS) });
     if (!response.ok) return {};
     const data = await response.json();
-    // Build the marketPrices map: coinId -> MYR price, plus the RATE_KEYS entries for USDT/USD.
     const prices = {};
     for (const [coinId, rates] of Object.entries(data)) {
       const myrPrice = Number(rates?.[PRICE_CURRENCY]);
@@ -47,7 +46,6 @@ async function loadMarketPrices(fetchImpl) {
         prices[coinId] = myrPrice;
       }
     }
-    // Keep backward-compatible RATE_KEYS entry for USDT (used by planEntry for Pionex trades)
     const usdtPrice = prices[USDT_COIN_ID];
     if (usdtPrice) prices[RATE_KEYS.USDT] = usdtPrice;
     return prices;
@@ -76,6 +74,114 @@ function planCashAlignment({ positions, balances, syncedBrokers, marketPrices, t
   return { positions: current, records, notes };
 }
 
+// Ensures Luno crypto quantities match Luno's reported balance (normal + staking combined).
+// If Luno reports slightly more units than the imported history (e.g. staking rewards not returned by the
+// transactions endpoint), the positive difference is added at RM 0.00 cost basis (staking reward).
+// If Luno reports fewer units (e.g. a small on-chain dust difference), quantity is aligned while preserving cost basis.
+function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, tradeDate }) {
+  if (!syncedBrokers.has('Luno')) return { positions, records: [] };
+  let current = positions;
+  const records = [];
+  const trackedSet = new Set(TRADED_ASSETS);
+
+  const lunoBalances = balances.filter((row) => row.broker === 'Luno' && trackedSet.has(row.asset));
+  for (const { asset, qty: brokerQty } of lunoBalances) {
+    if (blockedKeys?.has(`Luno|${asset}`)) continue;
+    const pos = findPosition(current, 'Luno', asset) ?? {
+      id: null, category: 'Crypto', broker: 'Luno', asset, qty: 0, costMyr: 0, realisedPl: 0,
+    };
+    const diff = roundTo(brokerQty - pos.qty, QUANTITY_DECIMALS);
+    if (Math.abs(diff) <= RECONCILE_TOLERANCE) continue;
+
+    if (diff > 0 && pos.qty > 0) {
+      // Positive gap on an existing Luno holding: staking rewards -> add at RM 0.00 cost basis
+      const after = addUnits(pos, diff, 0);
+      current = applyChanges(current, [{ before: pos, after }]);
+      records.push({
+        tradeDate,
+        kind: 'buy',
+        broker: 'Luno',
+        asset,
+        qty: diff,
+        price: 0,
+        currency: 'MYR',
+        fee: 0,
+        rate: 1,
+        totalMyr: 0,
+        fromAccount: '',
+        toAccount: `Luno ${asset}`,
+        amountFrom: 0,
+        amountTo: diff,
+        realisedPl: 0,
+        note: 'Staking reward (Luno), cost RM 0.00',
+        externalId: '',
+      });
+    } else if (diff < 0 && brokerQty >= 0) {
+      // Align quantity to Luno reported balance while keeping proportional cost basis
+      const unitCost = pos.qty > 0 ? pos.costMyr / pos.qty : 0;
+      const after = {
+        ...pos,
+        qty: roundTo(brokerQty, QUANTITY_DECIMALS),
+        costMyr: brokerQty <= QUANTITY_EPSILON ? 0 : roundTo(unitCost * brokerQty, MONEY_DECIMALS),
+      };
+      current = applyChanges(current, [{ before: pos, after }]);
+    }
+  }
+
+  return { positions: current, records };
+}
+
+// Detects if any previously imported Luno transaction in `transactions` is stale or was misclassified
+// (for example, an internal staking move `luno:transfer:*` / `luno:inflow:*` that is no longer in `broker_trades`,
+// or an `Opening balance` row created because of a misclassified staking transfer, or an Instant Buy whose
+// `cash_amount` was 0 / market-estimated before and now has its true MYR cost in `broker_trades`).
+function needsCryptoLedgerRebuild({ tradeRows, importedRows, positionRows, balances, syncedBrokers }) {
+  if (!syncedBrokers.has('Luno')) return false;
+  const validTradeMap = new Map(tradeRows.map((row) => [row.external_id, row]));
+
+  for (const tx of importedRows) {
+    const extId = tx.external_id;
+    if (!extId) continue;
+    // If an old luno:inflow or luno:transfer was paired/cancelled as a staking move, it won't be in broker_trades
+    if ((extId.startsWith('luno:inflow:') || extId.startsWith('luno:transfer:')) && !validTradeMap.has(extId)) {
+      return true;
+    }
+    // If an Instant Buy in broker_trades now has a real MYR cash_amount that differs from what was recorded
+    const brokerTrade = validTradeMap.get(extId);
+    if (
+      brokerTrade &&
+      extId.startsWith('luno:inflow:') &&
+      Number(brokerTrade.cash_amount) > 0 &&
+      tx.total_myr !== undefined &&
+      Math.abs(Number(tx.total_myr) - Number(brokerTrade.cash_amount)) > 0.05
+    ) {
+      return true;
+    }
+  }
+
+  // Also check if any Luno crypto position has RM 0.00 / RM 0.01 cost while Luno trades have positive cost
+  for (const pos of positionRows) {
+    if (pos.category === 'Crypto' && pos.broker === 'Luno' && Number(pos.qty) > 0 && Number(pos.cost_myr) <= 0.05) {
+      const hasPaidBuy = tradeRows.some(
+        (t) => t.broker === 'Luno' && t.asset === pos.asset && t.side === 'buy' && Number(t.cash_amount) > 1,
+      );
+      if (hasPaidBuy) return true;
+    }
+  }
+
+  // Check if Luno reported balance is smaller than Ledger balance (caused by old duplicate staking inflows)
+  const trackedSet = new Set(TRADED_ASSETS);
+  for (const bal of balances) {
+    if (bal.broker !== 'Luno' || !trackedSet.has(bal.asset)) continue;
+    const pos = positionRows.find((p) => p.broker === 'Luno' && p.asset === bal.asset);
+    if (pos && Number(pos.qty) - Number(bal.qty) > RECONCILE_TOLERANCE) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function savePosition(database, position) {
   if (position.id !== null && position.id !== undefined) {
     const row = toDatabaseRow(position);
@@ -86,7 +192,6 @@ async function savePosition(database, position) {
     const [saved] = await database.insert('portfolio', [toDatabaseRow(position)]);
     return toPosition(saved);
   } catch (error) {
-    // Some tables do not create the id automatically. In that case, choose the next free id.
     if (error.code !== '23502') throw error;
     const [latest] = await database.select('portfolio', 'select=id&order=id.desc&limit=1');
     const [saved] = await database.insert('portfolio', [{ id: (latest?.id ?? 0) + 1, ...toDatabaseRow(position) }]);
@@ -162,13 +267,29 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       return { broker: LEDGER_STATUS_NAME, ok: true, message: 'Waiting for the first broker read.' };
     }
 
-    const [tradeRows, importedRows, positionRows, balances, marketPrices] = await Promise.all([
+    let [tradeRows, importedRows, positionRows, balances, marketPrices] = await Promise.all([
       database.select('broker_trades', 'select=*&order=traded_at.asc,external_id.asc'),
-      database.select('transactions', 'select=external_id&external_id=not.is.null'),
+      database.select('transactions', 'select=id,external_id,total_myr,note&external_id=not.is.null'),
       database.select('portfolio', 'select=*&order=id.asc'),
       database.select('broker_balances', 'select=broker,asset,qty'),
       loadMarketPrices(fetchImpl),
     ]);
+
+    // Auto-heal if previous runs imported misclassified staking moves or unpriced instant buys
+    if (needsCryptoLedgerRebuild({ tradeRows, importedRows, positionRows, balances, syncedBrokers })) {
+      await database.remove('transactions', 'external_id=not.is.null');
+      await database.remove('transactions', `note=eq.${encodeURIComponent('Opening balance: no purchase found in the history')}`);
+      await database.remove('transactions', `note=eq.${encodeURIComponent('Staking reward (Luno), cost RM 0.00')}`);
+      for (const pos of positionRows) {
+        if (pos.category === 'Crypto') {
+          await database.update('portfolio', `id=eq.${pos.id}`, { qty: 0, cost_myr: 0, realised_pl: 0 });
+          pos.qty = 0;
+          pos.cost_myr = 0;
+          pos.realised_pl = 0;
+        }
+      }
+      importedRows = [];
+    }
 
     const positions = positionRows.map(toPosition);
     const originals = new Map(positions.map((position) => [keyOf(position), position]));
@@ -179,26 +300,53 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
     }));
     const newTrades = findNewTrades({ trades, importedIds: importedRows.map((row) => row.external_id) });
 
-    // Trades go in with the broker cash left alone, because the cash is set to the broker's balance below.
+    const tradeDate = toTradeDate(now().getTime());
+    const parsedBalances = balances.map((row) => ({ broker: row.broker, asset: row.asset, qty: Number(row.qty) }));
+
+    // 1. Plan all trades, instant buys, staking rewards and transfers
     const tradePlan = planTradeImport({ trades: newTrades, positions, marketPrices, useCash: false });
-    const cashPlan = planCashAlignment({
+
+    // 2. Align Luno crypto balances with Luno's reported balance (any unindexed staking rewards added at RM 0.00)
+    const lunoAligned = planLunoCryptoAlignment({
       positions: tradePlan.positions,
-      balances: balances.map((row) => ({ broker: row.broker, asset: row.asset, qty: Number(row.qty) })),
+      balances: parsedBalances,
       syncedBrokers,
-      marketPrices,
-      tradeDate: toTradeDate(now().getTime()),
+      blockedKeys: tradePlan.blockedKeys,
+      tradeDate,
     });
 
-    const records = [...tradePlan.records, ...cashPlan.records];
+    // 3. Align cash accounts
+    const cashPlan = planCashAlignment({
+      positions: lunoAligned.positions,
+      balances: parsedBalances,
+      syncedBrokers,
+      marketPrices,
+      tradeDate,
+    });
+
+    const records = [...tradePlan.records, ...lunoAligned.records, ...cashPlan.records];
+    const hasPositionChanges = cashPlan.positions.some((position) => {
+      const before = originals.get(keyOf(position));
+      return !before || before.qty !== position.qty || before.costMyr !== position.costMyr || before.realisedPl !== position.realisedPl;
+    });
+
     let failure = '';
-    if (records.length > 0) failure = await commit(database, { originals, finalPositions: cashPlan.positions, records });
+    if (records.length > 0 || hasPositionChanges) {
+      failure = await commit(database, { originals, finalPositions: cashPlan.positions, records });
+    }
 
     outcome = failure
       ? { broker: LEDGER_STATUS_NAME, ok: false, message: failure }
       : {
           broker: LEDGER_STATUS_NAME,
           ok: true,
-          message: describeResult({ tradeCount: tradePlan.importedIds.length, openingCount: tradePlan.openingCount, cashChanges: cashPlan.records.length, notes: cashPlan.notes, stopMessage: tradePlan.message }),
+          message: describeResult({
+            tradeCount: tradePlan.importedIds.length + lunoAligned.records.length,
+            openingCount: tradePlan.openingCount,
+            cashChanges: cashPlan.records.length,
+            notes: cashPlan.notes,
+            stopMessage: tradePlan.message,
+          }),
         };
   } catch (error) {
     outcome = { broker: LEDGER_STATUS_NAME, ok: false, message: `Ledger sync failed (${String(error.message ?? 'unknown error').slice(0, 150)}).` };

@@ -82,11 +82,24 @@ async function syncTrades(broker, env, fetchImpl, database, wait) {
     notes.push(`Trades: ${String(error.message ?? 'Unknown error.').slice(0, 150)}`);
   }
 
-  // Also sync on-chain transfers for brokers that support it (currently Luno).
+  // Also sync on-chain transfers, instant buys and staking rewards for Luno.
   if (broker.readTransfers) {
     try {
       const pages = env.TRADES_BACKFILL === 'true' ? BACKFILL_PAGES : RECENT_PAGES;
       const transfers = await broker.readTransfers(env, fetchImpl, pages);
+      // Remove old misclassified Luno transfer/inflow rows that are no longer emitted (e.g. internal staking moves)
+      const currentIds = new Set(transfers.map((row) => row.external_id));
+      try {
+        const existing = await database.select(TRADES_TABLE, 'select=external_id&broker=eq.Luno');
+        const obsoleteIds = existing
+          .map((r) => r.external_id)
+          .filter((id) => id && (id.startsWith('luno:transfer:') || id.startsWith('luno:inflow:') || id.startsWith('luno:reward:')) && !currentIds.has(id));
+        if (obsoleteIds.length > 0) {
+          await database.remove(TRADES_TABLE, `external_id=in.(${obsoleteIds.join(',')})`);
+        }
+      } catch {
+        // Non-fatal if cleanup query is skipped in a minimal mock
+      }
       for (let start = 0; start < transfers.length; start += TRADES_BATCH_SIZE) {
         await database.upsert(TRADES_TABLE, transfers.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
       }

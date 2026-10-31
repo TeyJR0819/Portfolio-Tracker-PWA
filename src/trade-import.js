@@ -4,13 +4,10 @@
 // The Worker (src/ledger-sync.js) saves the result.
 // Pure logic, tested in tests/trade-import.test.js.
 
-import { DISPLAY_TIME_ZONE, QUANTITY_DECIMALS } from '../public/js/config.js';
-import { QUANTITY_EPSILON } from '../public/js/logic/calculations.js';
+import { DISPLAY_TIME_ZONE, MONEY_DECIMALS, QUANTITY_DECIMALS } from '../public/js/config.js';
+import { QUANTITY_EPSILON, roundTo } from '../public/js/logic/calculations.js';
 import { findAsset, findPosition } from '../public/js/logic/catalog.js';
-import { addUnits } from '../public/js/logic/ledger.js';
-import { planEntry } from '../public/js/logic/ledger.js';
-import { roundTo } from '../public/js/logic/calculations.js';
-import { MONEY_DECIMALS } from '../public/js/config.js';
+import { addUnits, planEntry } from '../public/js/logic/ledger.js';
 
 // 'YYYY-MM-DD' in the display time zone.
 export function toTradeDate(timestamp) {
@@ -32,12 +29,18 @@ export function findNewTrades({ trades, importedIds, sinceDate = '' }) {
 }
 
 // The same input the Add entry form would send for a buy or sell trade.
-function tradeToEntry(trade, { useCash, marketPrices = {} }) {
+function tradeToEntry(trade, { useCash, marketPrices = {}, positions = [] }) {
   let total = trade.cashAmount;
   if (!total || total <= 0) {
     const coinId = findAsset(trade.asset)?.coinId;
-    const price = coinId ? (marketPrices[coinId] ?? 0) : 0;
-    total = Math.max(0.01, roundTo(trade.qty * price, MONEY_DECIMALS));
+    const held = findPosition(positions, trade.broker, trade.asset);
+    const avgCost = held && held.qty > 0 ? held.costMyr / held.qty : 0;
+    const marketPrice = coinId ? (marketPrices[coinId] ?? 0) : 0;
+    const unitPrice = marketPrice > 0 ? marketPrice : avgCost;
+    if (unitPrice <= 0) {
+      throw new Error(`The ${trade.asset} to RM price is not available.`);
+    }
+    total = roundTo(trade.qty * unitPrice, MONEY_DECIMALS);
   }
   return {
     kind: trade.side,
@@ -224,7 +227,7 @@ function planCryptoTransfer(trade, positions, marketPrices) {
 // Works out what the ledger looks like after the trades, without saving anything.
 // A trade that cannot be recorded (for example a missing exchange rate) holds back only the later trades of the
 // same coin at the same broker, never the other coins, so one problem cannot block the whole history.
-// Returns { positions, records, importedIds, openingCount, message }. message is empty when all went well.
+// Returns { positions, records, importedIds, openingCount, blockedKeys, message }. message is empty when all went well.
 export function planTradeImport({ trades, positions, marketPrices, useCash = false }) {
   let current = positions;
   const records = [];
@@ -255,7 +258,7 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
           records.push(opening.plan.record);
           openingCount += 1;
         }
-        const plan = planEntry(tradeToEntry(trade, { useCash, marketPrices }), { positions: current, marketPrices });
+        const plan = planEntry(tradeToEntry(trade, { useCash, marketPrices, positions: current }), { positions: current, marketPrices });
         current = applyChanges(current, plan.changes);
         records.push(plan.record);
         importedIds.push(trade.externalId);
@@ -266,5 +269,5 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
   }
 
   const problems = [...blocked.values()].slice(0, 2).join(' ');
-  return { positions: current, records, importedIds, openingCount, message: problems };
+  return { positions: current, records, importedIds, openingCount, blockedKeys: new Set(blocked.keys()), message: problems };
 }
