@@ -98,3 +98,19 @@ test('Webull holds the same stocks and a cash account like Moomoo', () => {
   const names = [...getTradableAssetsForBroker('Webull').map((entry) => entry.asset), getCashAssetForBroker('Webull')];
   assert.deepEqual(names.sort(), ['QQQM', 'SPYL', 'VOO', 'Webull Cash']);
 });
+
+test('transfers: two instant buys close together each keep their own RM cost', async () => {
+  const t = 1_760_000_000_000;
+  const transactions = {
+    myr1: [
+      { row_index: 1, timestamp: t, balance_delta: '-50', kind: 'EXCHANGE', description: 'Instant order' },
+      { row_index: 2, timestamp: t + 20_000, balance_delta: '-80', kind: 'EXCHANGE', description: 'Instant order' },
+    ],
+    w1: [
+      { row_index: 1, timestamp: t + 1000, balance_delta: '30', kind: 'EXCHANGE', description: 'Instant order' },
+      { row_index: 2, timestamp: t + 21_000, balance_delta: '45', kind: 'EXCHANGE', description: 'Instant order' },
+    ],
+  };
+  const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl: fakeLuno({ wallet, transactions }) });
+  assert.deepEqual(rows.map((r) => [r.qty, r.cash_amount]), [[30, 50], [45, 80]]);
+});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { findNewTrades, planTradeImport, toTradeDate, tradeToEntry } from '../src/trade-import.js';
+import { findNewTrades, planBalanceAlignment, planTradeImport, toTradeDate, tradeToEntry } from '../src/trade-import.js';
 
 const RATES = { 'fx:USD': 4, 'fx:USDT': 4.1 };
 const DAY = 24 * 60 * 60 * 1000;
@@ -163,4 +163,21 @@ test('staking reward: adds coins at RM 0.00 cost and lowers the average price', 
   assert.equal(ada.costMyr, 200);
   assert.equal(result.records[0].totalMyr, 0);
   assert.equal(result.message, '');
+});
+
+test('balance alignment: sets coins to the broker quantity at the average cost and reports the change', () => {
+  const positions = [
+    { id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 120, costMyr: 240, realisedPl: 0 },
+    { id: 2, category: 'Crypto', broker: 'Luno', asset: 'BTC', qty: 0.01, costMyr: 3000, realisedPl: 0 },
+  ];
+  const balances = [{ broker: 'Luno', asset: 'ADA', qty: 100 }, { broker: 'Luno', asset: 'BTC', qty: 0.01 }, { broker: 'Luno', asset: 'ETH', qty: 0.5 }];
+  const result = planBalanceAlignment({ positions, balances, broker: 'Luno', assets: ['ADA', 'BTC', 'ETH'], marketPrices: { ethereum: 10000 }, tradeDate: '2026-10-31' });
+  const get = (asset) => result.positions.find((p) => p.asset === asset);
+  assert.equal(get('ADA').qty, 100);
+  assert.equal(get('ADA').costMyr, 200);
+  assert.equal(get('BTC').qty, 0.01);
+  assert.equal(get('ETH').qty, 0.5);
+  assert.equal(get('ETH').costMyr, 5000);
+  assert.deepEqual(result.notes, ['ADA -20', 'ETH +0.5']);
+  assert.equal(result.records.length, 2);
 });

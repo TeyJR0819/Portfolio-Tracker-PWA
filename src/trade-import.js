@@ -271,3 +271,38 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
   const problems = [...blocked.values()].slice(0, 2).join(' ');
   return { positions: current, records, importedIds, openingCount, blockedKeys: new Set(blocked.keys()), message: problems };
 }
+
+// Sets the coins of one broker to the quantity the broker reports, so the portfolio always matches the broker.
+// The average cost is kept (coins added or removed carry the average cost); with no coins held, the market price is used.
+// Returns { positions, records, notes }, one note per correction.
+export function planBalanceAlignment({ positions, balances, broker, assets, marketPrices, tradeDate }) {
+  let current = positions;
+  const records = [];
+  const notes = [];
+
+  for (const asset of assets) {
+    const reported = roundTo(balances.find((row) => row.broker === broker && row.asset === asset)?.qty ?? 0, QUANTITY_DECIMALS);
+    const position = findPosition(current, broker, asset);
+    const held = position?.qty ?? 0;
+    if (Math.abs(reported - held) <= 1e-6) continue;
+
+    const base = position ?? { id: null, category: 'Crypto', broker, asset, qty: 0, costMyr: 0, realisedPl: 0 };
+    const coinId = findAsset(asset)?.coinId;
+    const unitCost = held > 0 ? base.costMyr / held : (coinId ? (marketPrices[coinId] ?? 0) : 0);
+    const after = reported <= QUANTITY_EPSILON
+      ? { ...base, qty: 0, costMyr: 0 }
+      : { ...base, qty: reported, costMyr: roundTo(unitCost * reported, MONEY_DECIMALS) };
+    const change = roundTo(reported - held, QUANTITY_DECIMALS);
+
+    current = applyChanges(current, [{ before: base, after }]);
+    records.push({
+      tradeDate, kind: 'adjust', broker, asset, qty: change, price: unitCost, currency: 'MYR', fee: 0, rate: 1,
+      totalMyr: roundTo(Math.abs(change) * unitCost, MONEY_DECIMALS),
+      fromAccount: '', toAccount: `${broker} ${asset}`, amountFrom: 0, amountTo: reported, realisedPl: 0,
+      note: `Balance corrected to the ${broker} balance (${change > 0 ? '+' : ''}${change} ${asset} not explained by the history)`,
+      externalId: '',
+    });
+    notes.push(`${asset} ${change > 0 ? '+' : ''}${change}`);
+  }
+  return { positions: current, records, notes };
+}

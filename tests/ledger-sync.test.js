@@ -80,7 +80,7 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
 
 const baseTables = () => ({
   broker_sync_status: [{ broker: 'Luno', ok: true }, { broker: 'Pionex', ok: true }],
-  broker_balances: [{ broker: 'Luno', asset: 'Luno Cash', qty: 250.5 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 40 }],
+  broker_balances: [{ broker: 'Luno', asset: 'Luno Cash', qty: 250.5 }, { broker: 'Luno', asset: 'BTC', qty: 0.01 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 40 }],
   broker_trades: [
     trade('luno:XBTMYR:1', { qty: 0.02, cash_amount: 6009, fee_quote: 9, traded_at: new Date(T0).toISOString() }),
     trade('luno:XBTMYR:2', { side: 'sell', qty: 0.01, cash_amount: 3500, fee_quote: 5, traded_at: new Date(T0 + DAY).toISOString() }),
@@ -136,6 +136,7 @@ test('ledger sync: a new trade later is added on top, and cash follows the broke
   await run(fake);
   fake.data.broker_trades.push(trade('luno:XBTMYR:3', { qty: 0.005, cash_amount: 1500, traded_at: new Date(T0 + 3 * DAY).toISOString() }));
   fake.data.broker_balances.find((row) => row.asset === 'Luno Cash').qty = 100;
+  fake.data.broker_balances.find((row) => row.asset === 'BTC').qty = 0.015;
 
   const outcome = await run(fake);
   assert.match(outcome.message, /1 trade recorded/);
@@ -180,6 +181,7 @@ test('ledger sync: a sale with no earlier purchase gets an opening balance at th
     trade('luno:XBTMYR:2', { qty: 0.01, cash_amount: 3000, traded_at: new Date(T0 + DAY).toISOString() }),
     trade('luno:ADAMYR:3', { asset: 'ADA', qty: 100, cash_amount: 250, traded_at: new Date(T0 + 2 * DAY).toISOString() }),
   ];
+  tables.broker_balances.push({ broker: 'Luno', asset: 'ADA', qty: 100 });
   const fake = createFakeSupabase({ tables });
   const outcome = await run(fake);
 
@@ -206,6 +208,18 @@ test('ledger sync: a problem with one coin holds back only that coin', async () 
   assert.match(outcome.message, /Held back the Pionex buy/);
   assert.equal(find(fake.data, 'Luno', 'BTC').qty, 0.01);
   assert.ok(!find(fake.data, 'Pionex', 'BTC'));
+});
+
+test('ledger sync: coins that the history cannot explain are corrected to the Luno balance, and the correction is shown', async () => {
+  const tables = baseTables();
+  tables.broker_balances.find((row) => row.asset === 'BTC').qty = 0.012;
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+  assert.match(outcome.message, /Luno balance corrected \(not explained by the history\): BTC \+0\.002/);
+  const btc = find(fake.data, 'Luno', 'BTC');
+  assert.equal(btc.qty, 0.012);
+  assert.equal(btc.cost_myr, 3605.4, 'added coins carry the average cost of RM 300450 per BTC');
+  assert.ok(fake.data.transactions.some((row) => row.kind === 'adjust' && row.asset === 'BTC'));
 });
 
 test('ledger sync: without an exchange rate the Pionex trades wait and the rest still works', async () => {

@@ -317,3 +317,8 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 - The Luno balance adds the normal wallet and the staking wallet of each coin (Luno marks staking accounts with `account_type: STAKING`; the key needs "View staking").
 - Moving coins between the wallet and the staking wallet is not a trade. Both sides cancel out, so staked coins keep the buying price of the normal wallet.
 - Every staking reward is recorded as a buy at RM 0.00 cost, so the average price falls and the coins carry full value.
+
+## Luno balance check
+
+After the history is applied, every Luno coin is set to the quantity Luno reports (normal plus staking wallet). A gap that the history cannot explain is never booked as a free reward. It is added or removed at the average cost and written as a ledger line "Balance corrected to the Luno balance". The Ledger status names the coin and the amount, so the gap can be traced to the missing movement.
+RM 0.00 buys have one intended source: staking rewards read from the staking account history (note "Staking reward").

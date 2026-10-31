@@ -9,13 +9,12 @@
 //      Any residual staking reward gap is added at RM 0.00 cost so Ledger always matches Broker says.
 //   4. The cash of Luno and Pionex is set to the balance the broker reports.
 
-import { MONEY_DECIMALS, PRICE_API_URL, PRICE_CURRENCY, QUANTITY_DECIMALS, RATE_KEYS, USDT_COIN_ID } from '../public/js/config.js';
-import { QUANTITY_EPSILON, roundTo } from '../public/js/logic/calculations.js';
-import { getCoinIds, findPosition } from '../public/js/logic/catalog.js';
-import { addUnits, planEntry } from '../public/js/logic/ledger.js';
+import { PRICE_API_URL, PRICE_CURRENCY, RATE_KEYS, USDT_COIN_ID } from '../public/js/config.js';
+import { getCoinIds } from '../public/js/logic/catalog.js';
+import { planEntry } from '../public/js/logic/ledger.js';
 import { toDatabaseRow, toPosition, toTransactionRow } from '../public/js/logic/rows.js';
 import { createDatabase } from './supabase.js';
-import { applyChanges, findNewTrades, planTradeImport, toTradeDate } from './trade-import.js';
+import { applyChanges, findNewTrades, planBalanceAlignment, planTradeImport, toTradeDate } from './trade-import.js';
 import { TRADED_ASSETS } from './brokers/trades.js';
 
 export const LEDGER_STATUS_NAME = 'Ledger';
@@ -74,61 +73,14 @@ function planCashAlignment({ positions, balances, syncedBrokers, marketPrices, t
   return { positions: current, records, notes };
 }
 
-// Ensures Luno crypto quantities match Luno's reported balance (normal + staking combined).
-// If Luno reports slightly more units than the imported history (e.g. staking rewards not returned by the
-// transactions endpoint), the positive difference is added at RM 0.00 cost basis (staking reward).
-// If Luno reports fewer units (e.g. a small on-chain dust difference), quantity is aligned while preserving cost basis.
-function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, tradeDate }) {
-  if (!syncedBrokers.has('Luno')) return { positions, records: [] };
-  let current = positions;
-  const records = [];
-  const trackedSet = new Set(TRADED_ASSETS);
-
-  const lunoBalances = balances.filter((row) => row.broker === 'Luno' && trackedSet.has(row.asset));
-  for (const { asset, qty: brokerQty } of lunoBalances) {
-    if (blockedKeys?.has(`Luno|${asset}`)) continue;
-    const pos = findPosition(current, 'Luno', asset) ?? {
-      id: null, category: 'Crypto', broker: 'Luno', asset, qty: 0, costMyr: 0, realisedPl: 0,
-    };
-    const diff = roundTo(brokerQty - pos.qty, QUANTITY_DECIMALS);
-    if (Math.abs(diff) <= RECONCILE_TOLERANCE) continue;
-
-    if (diff > 0 && pos.qty > 0) {
-      // Positive gap on an existing Luno holding: staking rewards -> add at RM 0.00 cost basis
-      const after = addUnits(pos, diff, 0);
-      current = applyChanges(current, [{ before: pos, after }]);
-      records.push({
-        tradeDate,
-        kind: 'buy',
-        broker: 'Luno',
-        asset,
-        qty: diff,
-        price: 0,
-        currency: 'MYR',
-        fee: 0,
-        rate: 1,
-        totalMyr: 0,
-        fromAccount: '',
-        toAccount: `Luno ${asset}`,
-        amountFrom: 0,
-        amountTo: diff,
-        realisedPl: 0,
-        note: 'Staking reward (Luno), cost RM 0.00',
-        externalId: '',
-      });
-    } else if (diff < 0 && brokerQty >= 0) {
-      // Align quantity to Luno reported balance while keeping proportional cost basis
-      const unitCost = pos.qty > 0 ? pos.costMyr / pos.qty : 0;
-      const after = {
-        ...pos,
-        qty: roundTo(brokerQty, QUANTITY_DECIMALS),
-        costMyr: brokerQty <= QUANTITY_EPSILON ? 0 : roundTo(unitCost * brokerQty, MONEY_DECIMALS),
-      };
-      current = applyChanges(current, [{ before: pos, after }]);
-    }
-  }
-
-  return { positions: current, records };
+// Sets every Luno coin to the quantity Luno reports (normal + staking wallet). Staking rewards are already read
+// from the account history at RM 0.00, so a gap left here is something the history cannot explain. It is never
+// booked as a free reward: the coins are added or removed at the average cost (or the market price when none are
+// held), written as a visible "Balance corrected" line, and named in the Ledger status.
+function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, marketPrices, tradeDate }) {
+  if (!syncedBrokers.has('Luno')) return { positions, records: [], notes: [] };
+  const assets = TRADED_ASSETS.filter((asset) => !blockedKeys?.has(`Luno|${asset}`));
+  return planBalanceAlignment({ positions, balances, broker: 'Luno', assets, marketPrices, tradeDate });
 }
 
 // Detects if any previously imported Luno transaction in `transactions` is stale or was misclassified
@@ -241,11 +193,12 @@ async function undoTransactions(database, ids) {
   if (ids.length > 0) await database.remove('transactions', `id=in.(${ids.join(',')})`);
 }
 
-function describeResult({ tradeCount, openingCount, cashChanges, notes, stopMessage }) {
+function describeResult({ tradeCount, openingCount, cashChanges, notes, corrections = [], stopMessage }) {
   const parts = [];
   if (tradeCount > 0) parts.push(`${tradeCount} ${tradeCount === 1 ? 'trade' : 'trades'} recorded`);
   if (openingCount > 0) parts.push(`${openingCount} ${openingCount === 1 ? 'sale' : 'sales'} had no earlier purchase in the history, so those coins were counted at the sale price (no profit or loss)`);
   if (cashChanges > 0) parts.push(`${cashChanges} cash ${cashChanges === 1 ? 'balance' : 'balances'} synced`);
+  if (corrections.length > 0) parts.push(`Luno balance corrected (not explained by the history): ${corrections.join(', ')}`);
   if (stopMessage) parts.push(stopMessage);
   parts.push(...notes);
   return parts.join('. ').slice(0, 300);
@@ -312,6 +265,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       balances: parsedBalances,
       syncedBrokers,
       blockedKeys: tradePlan.blockedKeys,
+      marketPrices,
       tradeDate,
     });
 
@@ -341,7 +295,8 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
           broker: LEDGER_STATUS_NAME,
           ok: true,
           message: describeResult({
-            tradeCount: tradePlan.importedIds.length + lunoAligned.records.length,
+            tradeCount: tradePlan.importedIds.length,
+            corrections: lunoAligned.notes,
             openingCount: tradePlan.openingCount,
             cashChanges: cashPlan.records.length,
             notes: cashPlan.notes,

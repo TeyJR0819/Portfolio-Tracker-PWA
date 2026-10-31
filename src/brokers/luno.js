@@ -360,15 +360,21 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
       cashAmount = match.totalMyr;
       feeQuote = match.feeMyr;
     } else if (String(txn.kind ?? '').toUpperCase() === 'EXCHANGE' || /bought|sold|instant/i.test(String(txn.description ?? ''))) {
-      // Match MYR entries within 60 seconds with opposite direction
+      // Match one MYR movement within 60 seconds in the opposite direction (the closest one), plus its own fee rows.
+      // Taking every movement in the window would merge two instant buys made close together.
       const candidates = myrEvents.filter(
-        (m) => !m.used && Math.abs(m.timestamp - timestamp) <= MYR_MATCH_WINDOW_MS && (delta > 0 ? m.delta < 0 : m.delta > 0),
+        (m) => !m.used && !m.isFee && Math.abs(m.timestamp - timestamp) <= MYR_MATCH_WINDOW_MS && (delta > 0 ? m.delta < 0 : m.delta > 0),
       );
-      if (candidates.length > 0) {
-        for (const c of candidates) {
-          c.used = true;
-          cashAmount += Math.abs(c.delta);
-          if (c.isFee) feeQuote += Math.abs(c.delta);
+      candidates.sort((a, b) => Math.abs(a.timestamp - timestamp) - Math.abs(b.timestamp - timestamp));
+      const main = candidates[0];
+      if (main) {
+        main.used = true;
+        cashAmount += Math.abs(main.delta);
+        for (const fee of myrEvents) {
+          if (fee.used || !fee.isFee || Math.abs(fee.timestamp - main.timestamp) > 5000) continue;
+          fee.used = true;
+          cashAmount += delta > 0 ? Math.abs(fee.delta) : -Math.abs(fee.delta);
+          feeQuote += Math.abs(fee.delta);
         }
       }
     }
