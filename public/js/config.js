@@ -12,7 +12,7 @@ export const STORAGE_KEYS = Object.freeze({
 
 export const DATABASE_TABLE = 'portfolio';
 export const TRANSACTIONS_TABLE = 'transactions';
-export const TRANSACTIONS_LIMIT = 500;
+export const TRANSACTIONS_LIMIT = 5000;
 export const DISPLAY_TIME_ZONE = 'Asia/Kuala_Lumpur'; // Decides the date written on an imported trade.
 export const BROKER_BALANCES_TABLE = 'broker_balances'; // Written only by the Cloudflare Worker.
 export const BROKER_SYNC_STATUS_TABLE = 'broker_sync_status';
