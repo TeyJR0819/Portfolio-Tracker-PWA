@@ -154,3 +154,13 @@ test('plan: an inflow with cashAmount 0 uses market price for cost basis', () =>
   assert.equal(btc.qty, 0.00380077);
   assert.equal(btc.costMyr, Math.round(0.00380077 * 300000 * 100) / 100);
 });
+
+test('staking reward: adds coins at RM 0.00 cost and lowers the average price', () => {
+  const positions = [{ id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 100, costMyr: 200, realisedPl: 0 }];
+  const result = planTradeImport({ trades: [trade('luno:reward:a:1', { asset: 'ADA', side: 'staking_reward', qty: 5, cashAmount: 0 })], positions, marketPrices: {} });
+  const ada = result.positions.find((p) => p.asset === 'ADA');
+  assert.equal(ada.qty, 105);
+  assert.equal(ada.costMyr, 200);
+  assert.equal(result.records[0].totalMyr, 0);
+  assert.equal(result.message, '');
+});

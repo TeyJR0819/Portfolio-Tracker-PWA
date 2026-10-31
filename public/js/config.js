@@ -65,14 +65,15 @@ export const ASSET_CATALOG = Object.freeze([
   { asset: 'Luno Cash', category: 'Cash', brokers: ['Luno'], fixedPrice: 1, color: '#14B8A6' },
   { asset: 'Pionex Cash', category: 'Cash', brokers: ['Pionex'], priceCurrency: 'USDT', color: '#0284C7' },
   { asset: 'Moomoo Cash', category: 'Cash', brokers: ['Moomoo'], fixedPrice: 1, color: '#EA580C' },
+  { asset: 'Webull Cash', category: 'Cash', brokers: ['Webull'], fixedPrice: 1, color: '#F59E0B' },
   { asset: 'IBKR Cash', category: 'Cash', brokers: ['IBKR'], priceCurrency: 'USD', color: '#DC2626' },
   { asset: 'Moomoo MMF', category: 'MMF', brokers: ['Moomoo'], fixedPrice: 1, color: '#D97706' },
-  { asset: 'VOO', category: 'Stocks', brokers: ['Moomoo', 'IBKR'], stockSymbol: 'VOO', color: '#7C3AED' },
-  { asset: 'QQQM', category: 'Stocks', brokers: ['Moomoo', 'IBKR'], stockSymbol: 'QQQM', color: '#A78BFA' },
-  { asset: 'SPYL', category: 'Stocks', brokers: ['Moomoo', 'IBKR'], stockSymbol: 'SPYL.L', color: '#C4B5FD' },
+  { asset: 'VOO', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'VOO', color: '#7C3AED' },
+  { asset: 'QQQM', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'QQQM', color: '#A78BFA' },
+  { asset: 'SPYL', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'SPYL.L', color: '#C4B5FD' },
 ]);
 
-export const BROKER_ORDER = Object.freeze(['Luno', 'Pionex', 'Moomoo', 'IBKR', 'Bank']);
+export const BROKER_ORDER = Object.freeze(['Luno', 'Pionex', 'Moomoo', 'Webull', 'IBKR', 'Bank']);
 
 // The currency each broker account works in. Every other broker works in RM.
 // Prices, fees and cash movements at these brokers are typed in this currency.

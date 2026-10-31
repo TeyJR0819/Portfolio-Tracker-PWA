@@ -9,8 +9,8 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 - Live MYR prices, cached for 120 seconds, with fallback to the last known price and then to average cost.
   - Crypto: CoinGecko.
   - Stocks (VOO, QQQM, SPYL): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
-- Brokers: Luno, Pionex, Moomoo, IBKR and Bank. IBKR holds the same stocks as Moomoo.
-- Cash accounts for Bank, Luno, Pionex (USDT), Moomoo and IBKR (USD), plus the Moomoo MMF.
+- Brokers: Luno, Pionex, Moomoo, Webull, IBKR and Bank. Webull and IBKR hold the same stocks as Moomoo.
+- Cash accounts for Bank, Luno, Pionex (USDT), Moomoo, Webull and IBKR (USD), plus the Moomoo MMF.
 - One "Add entry" form for every kind of entry (see Entries below), with optional fees and a note.
 - Weighted-average cost, realised profit or loss, and the cost per unit calculated from the amount paid.
 - A Transactions page that lists every entry.
@@ -274,7 +274,7 @@ For a buy or a sell, enter either the price per unit or the total amount. With t
 | --- | --- | --- |
 | IBKR (stocks and IBKR Cash) | USD | RM |
 | Pionex (crypto and Pionex Cash) | USDT | RM |
-| Luno, Moomoo and Bank | RM | RM |
+| Luno, Moomoo, Webull and Bank | RM | RM |
 
 The form shows the exchange rate used. The cost basis is fixed at the rate of the day of the entry. The USD rate comes from Yahoo Finance. The USDT rate comes from CoinGecko. If only one of them is available, it stands in for the other. USD and USDT cash balances are valued at the current rate, so their profit or loss includes the exchange-rate effect. This effect becomes realised when the cash is moved or spent.
 
@@ -311,3 +311,9 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 | SPYL has no price | `SPYL.L` is the London listing. If you hold a different listing, change `stockSymbol` for SPYL in `public/js/config.js`. |
 | The old version appears after a deploy | Raise `CACHE_VERSION` in `public/sw.js`, then reload twice. |
 | Deploy fails with "Missing entry-point" | `wrangler.toml` must contain `main` and an `[assets]` section, as in this repository. Do not add `pages_build_output_dir`. |
+
+## Luno staking
+
+- The Luno balance adds the normal wallet and the staking wallet of each coin (Luno marks staking accounts with `account_type: STAKING`; the key needs "View staking").
+- Moving coins between the wallet and the staking wallet is not a trade. Both sides cancel out, so staked coins keep the buying price of the normal wallet.
+- Every staking reward is recorded as a buy at RM 0.00 cost, so the average price falls and the coins carry full value.

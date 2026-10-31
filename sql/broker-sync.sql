@@ -24,7 +24,7 @@ create table if not exists broker_trades (
   external_id    text        primary key,        -- for example luno:XBTMYR:12345
   broker         text        not null,
   asset          text        not null,
-  side           text        not null,           -- buy or sell
+  side           text        not null,           -- buy, sell, staking_reward, send or transfer_to_pionex
   qty            numeric     not null,           -- units that arrived (buy) or left (sell)
   cash_amount    numeric     not null,           -- money that left (buy) or arrived (sell), fee included
   fee_quote      numeric     not null default 0,

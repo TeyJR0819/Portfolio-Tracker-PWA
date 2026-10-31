@@ -93,6 +93,22 @@ function planOpeningBalance(trade, positions, marketPrices) {
   return { plan: planEntry(entry, { positions, marketPrices }), shortfall };
 }
 
+// A staking reward is new coins that cost nothing: the quantity grows, the cost stays, so the average price falls.
+// The staked principal is never recorded here, because it stays in the same Luno balance at the wallet price.
+function planStakingReward(trade, positions) {
+  const position = findPosition(positions, trade.broker, trade.asset) ?? {
+    id: null, category: 'Crypto', broker: trade.broker, asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+  };
+  const changes = [{ before: position, after: addUnits(position, trade.qty, 0) }];
+  const record = {
+    tradeDate: toTradeDate(trade.tradedAt), kind: 'buy', broker: trade.broker, asset: trade.asset,
+    qty: trade.qty, price: 0, currency: 'MYR', fee: 0, rate: 1, totalMyr: 0,
+    fromAccount: '', toAccount: `${trade.broker} ${trade.asset}`, amountFrom: 0, amountTo: trade.qty,
+    realisedPl: 0, note: `Staking reward (${trade.broker}), cost RM 0.00`, externalId: trade.externalId,
+  };
+  return { changes, record };
+}
+
 // ---------------------------------------------------------------------------
 // On-chain transfer handling:
 // - Transfer out from Luno (side === 'send' or 'transfer_to_pionex'):
@@ -117,7 +133,8 @@ function planCryptoTransfer(trade, positions, marketPrices) {
     if (currentLuno.qty < trade.qty - QUANTITY_EPSILON) {
       const shortfall = roundTo(trade.qty - currentLuno.qty, QUANTITY_DECIMALS);
       const coinId = findAsset(trade.asset)?.coinId;
-      const price = coinId ? (marketPrices[coinId] ?? 0) : 0;
+      const avgCost = currentLuno.qty > 0 ? currentLuno.costMyr / currentLuno.qty : 0;
+      const price = avgCost > 0 ? avgCost : (coinId ? (marketPrices[coinId] ?? 0) : 0);
       const addedCost = roundTo(shortfall * price, MONEY_DECIMALS);
       currentLuno = {
         ...currentLuno,
@@ -220,7 +237,12 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
     if (blocked.has(key)) continue;
 
     try {
-      if (trade.side === 'receive' || trade.side === 'send' || trade.side === 'transfer_to_pionex') {
+      if (trade.side === 'staking_reward') {
+        const reward = planStakingReward(trade, current);
+        current = applyChanges(current, reward.changes);
+        records.push(reward.record);
+        importedIds.push(trade.externalId);
+      } else if (trade.side === 'receive' || trade.side === 'send' || trade.side === 'transfer_to_pionex') {
         const transfer = planCryptoTransfer(trade, current, marketPrices);
         current = applyChanges(current, transfer.changes);
         records.push(transfer.record);

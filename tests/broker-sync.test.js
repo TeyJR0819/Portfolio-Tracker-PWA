@@ -19,6 +19,7 @@ test('Pionex signature matches the documented example', async () => {
 test('Luno: basic auth, XBT renamed, MYR becomes Luno Cash, zero balances dropped', async () => {
   let seen;
   const fetchImpl = async (url, init) => {
+    if (String(url).includes('account_type=STAKING')) return json({ balance: [] });
     seen = { url, init };
     return json({ balance: [
       { asset: 'XBT', balance: '0.50000000' }, { asset: 'MYR', balance: '0.11' },
