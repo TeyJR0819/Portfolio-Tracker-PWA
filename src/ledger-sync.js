@@ -26,6 +26,9 @@ const CASH_ACCOUNTS = Object.freeze([
 ]);
 
 const TRANSACTION_BATCH_SIZE = 200;
+// Older versions booked every unexplained coin gap under this note, with no trade id. A real reward read from Luno
+// has the same note but also a trade id, so a line WITHOUT a trade id is such a leftover.
+const STAKING_REWARD_NOTE = 'Staking reward (Luno), cost RM 0.00';
 const RATE_TIMEOUT_MS = 8000;
 const RECONCILE_TOLERANCE = 1e-6;
 const keyOf = (position) => `${position.broker}|${position.asset}`;
@@ -87,8 +90,10 @@ function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKe
 // (for example, an internal staking move `luno:transfer:*` / `luno:inflow:*` that is no longer in `broker_trades`,
 // or an `Opening balance` row created because of a misclassified staking transfer, or an Instant Buy whose
 // `cash_amount` was 0 / market-estimated before and now has its true MYR cost in `broker_trades`).
-function needsCryptoLedgerRebuild({ tradeRows, importedRows, positionRows, balances, syncedBrokers }) {
+function needsCryptoLedgerRebuild({ tradeRows, importedRows, leftoverRewardRows = [], positionRows, balances, syncedBrokers }) {
   if (!syncedBrokers.has('Luno')) return false;
+  // A leftover "Staking reward" line without a trade id inflates the coins and hides the real gap. Rebuild once to remove it.
+  if (leftoverRewardRows.length > 0) return true;
   const validTradeMap = new Map(tradeRows.map((row) => [row.external_id, row]));
 
   for (const tx of importedRows) {
@@ -220,19 +225,20 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       return { broker: LEDGER_STATUS_NAME, ok: true, message: 'Waiting for the first broker read.' };
     }
 
-    let [tradeRows, importedRows, positionRows, balances, marketPrices] = await Promise.all([
+    let [tradeRows, importedRows, leftoverRewardRows, positionRows, balances, marketPrices] = await Promise.all([
       database.select('broker_trades', 'select=*&order=traded_at.asc,external_id.asc'),
       database.select('transactions', 'select=id,external_id,total_myr,note&external_id=not.is.null'),
+      database.select('transactions', `select=id&external_id=is.null&note=eq.${encodeURIComponent(STAKING_REWARD_NOTE)}`),
       database.select('portfolio', 'select=*&order=id.asc'),
       database.select('broker_balances', 'select=broker,asset,qty'),
       loadMarketPrices(fetchImpl),
     ]);
 
     // Auto-heal if previous runs imported misclassified staking moves or unpriced instant buys
-    if (needsCryptoLedgerRebuild({ tradeRows, importedRows, positionRows, balances, syncedBrokers })) {
+    if (needsCryptoLedgerRebuild({ tradeRows, importedRows, leftoverRewardRows, positionRows, balances, syncedBrokers })) {
       await database.remove('transactions', 'external_id=not.is.null');
       await database.remove('transactions', `note=eq.${encodeURIComponent('Opening balance: no purchase found in the history')}`);
-      await database.remove('transactions', `note=eq.${encodeURIComponent('Staking reward (Luno), cost RM 0.00')}`);
+      await database.remove('transactions', `note=eq.${encodeURIComponent(STAKING_REWARD_NOTE)}`);
       for (const pos of positionRows) {
         if (pos.category === 'Crypto') {
           await database.update('portfolio', `id=eq.${pos.id}`, { qty: 0, cost_myr: 0, realised_pl: 0 });

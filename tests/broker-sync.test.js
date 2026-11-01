@@ -361,3 +361,33 @@ test('sync: Pionex is read once an hour (first run of the hour), unless SYNC_ALW
   assert.equal((await runBrokerSync(env, { fetchImpl, now: () => new Date('2026-10-30T07:05:00Z'), wait: async () => {} }))[0].broker, 'Pionex');
   assert.equal((await runBrokerSync({ ...env, SYNC_ALWAYS: 'true' }, { fetchImpl, now: () => new Date('2026-10-30T07:20:00Z'), wait: async () => {} }))[0].broker, 'Pionex');
 });
+
+
+test('sync: a normal run never deletes older Luno rows, a full read does, and says what it read', async () => {
+  const run = async (backfill) => {
+    const calls = [];
+    const fetchImpl = async (url, init = {}) => {
+      const text = String(url);
+      calls.push({ url: text, init });
+      if (text.includes('broker_trades?select=external_id')) return json([{ external_id: 'luno:reward:s1:99' }, { external_id: 'luno:reward:s1:2' }]);
+      if (text.includes('/transactions')) {
+        return json({ transactions: text.includes('accounts/s1/') ? [{ row_index: 2, timestamp: 1761800000000, balance_delta: '0.5', kind: 'INTEREST', description: 'Staking reward' }] : [] });
+      }
+      if (text.includes('listtrades')) return json({ trades: [] });
+      if (text.startsWith('https://api.luno.com')) return json({ balance: [{ account_id: 'w1', asset: 'ADA', balance: '1', account_type: 'TRANSACTIONAL' }, { account_id: 's1', asset: 'ADA', balance: '0.5', account_type: 'STAKING' }] });
+      return new Response(null, { status: 204 });
+    };
+    const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b', ...(backfill ? { TRADES_BACKFILL: 'true' } : {}) };
+    const outcomes = await runBrokerSync(env, { fetchImpl, wait: async () => {} });
+    return { calls, outcomes };
+  };
+
+  const normal = await run(false);
+  assert.ok(!normal.calls.some((call) => call.init.method === 'DELETE' && call.url.includes('broker_trades')), 'a partial read must not delete anything');
+
+  const full = await run(true);
+  const removal = full.calls.find((call) => call.init.method === 'DELETE' && call.url.includes('broker_trades'));
+  assert.ok(removal, 'the full read removes the row it no longer returns');
+  assert.ok(removal.url.includes('luno:reward:s1:99') && !removal.url.includes('luno:reward:s1:2'));
+  assert.match(full.outcomes[0].message, /Full Luno history read: 1 rows\. Staking rewards: ADA 0\.5/);
+});
