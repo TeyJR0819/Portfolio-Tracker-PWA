@@ -321,6 +321,12 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 - Older saved Luno rows are cleaned up only after a full read (`TRADES_BACKFILL`), never after a normal run.
 - A leftover ledger line "Staking reward (Luno), cost RM 0.00" without a trade ID comes from an older version. The Ledger sync removes it and rebuilds the crypto lines once from the saved history.
 
+## How the Luno amounts are worked out
+
+- A Luno trade is a buy or a sell according to the `type` of the order you placed (BID = buy, ASK = sell). The `is_buy` field is about the other party and is not used.
+- A buy costs the MYR paid plus the fee, a sell brings in the MYR received minus the fee. Instant Buys take their MYR from the matching movement in the Luno MYR wallet.
+- A "Balance corrected" line is worth the changed coins times the average cost of the coins held, or the live CoinGecko price when none are held. It is a correction, not a purchase. A large one means the history is missing something.
+
 ## Luno balance check
 
 After the history is applied, every Luno coin is set to the quantity Luno reports (normal plus staking wallet). A gap that the history cannot explain is never booked as a free reward. It is added or removed at the average cost and written as a ledger line "Balance corrected to the Luno balance". The Ledger status names the coin and the amount, so the gap can be traced to the missing movement.

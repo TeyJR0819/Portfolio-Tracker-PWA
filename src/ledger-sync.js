@@ -105,6 +105,10 @@ function needsCryptoLedgerRebuild({ tradeRows, importedRows, leftoverRewardRows 
     }
     // If an Instant Buy in broker_trades now has a real MYR cash_amount that differs from what was recorded
     const brokerTrade = validTradeMap.get(extId);
+    // A trade saved with the wrong side by an older version (a buy booked as a sell, or the reverse)
+    if (brokerTrade && (brokerTrade.side === 'buy' || brokerTrade.side === 'sell') && (tx.kind === 'buy' || tx.kind === 'sell') && tx.kind !== brokerTrade.side && !extId.startsWith('luno:reward:')) {
+      return true;
+    }
     if (
       brokerTrade &&
       extId.startsWith('luno:inflow:') &&
@@ -227,7 +231,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
 
     let [tradeRows, importedRows, leftoverRewardRows, positionRows, balances, marketPrices] = await Promise.all([
       database.select('broker_trades', 'select=*&order=traded_at.asc,external_id.asc'),
-      database.select('transactions', 'select=id,external_id,total_myr,note&external_id=not.is.null'),
+      database.select('transactions', 'select=id,external_id,total_myr,note,kind&external_id=not.is.null'),
       database.select('transactions', `select=id&external_id=is.null&note=eq.${encodeURIComponent(STAKING_REWARD_NOTE)}`),
       database.select('portfolio', 'select=*&order=id.asc'),
       database.select('broker_balances', 'select=broker,asset,qty'),
@@ -239,6 +243,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       await database.remove('transactions', 'external_id=not.is.null');
       await database.remove('transactions', `note=eq.${encodeURIComponent('Opening balance: no purchase found in the history')}`);
       await database.remove('transactions', `note=eq.${encodeURIComponent(STAKING_REWARD_NOTE)}`);
+      await database.remove('transactions', `note=like.${encodeURIComponent('Balance corrected*')}`); // stale corrections of the old, wrong history
       for (const pos of positionRows) {
         if (pos.category === 'Crypto') {
           await database.update('portfolio', `id=eq.${pos.id}`, { qty: 0, cost_myr: 0, realised_pl: 0 });

@@ -238,8 +238,8 @@ test('Luno trades: reads each coin against MYR, skips unknown pairs, never sends
     urls.push(String(url));
     if (String(url).includes('pair=XBTMYR')) {
       return json({ trades: [
-        { sequence: 5, timestamp: 1761800000000, is_buy: true, volume: '0.01', counter: '3000', fee_base: '0', fee_counter: '4.5' },
-        { sequence: 6, timestamp: 1761800100000, is_buy: false, volume: '0.005', counter: '1500', fee_base: '0', fee_counter: '2' },
+        { sequence: 5, timestamp: 1761800000000, type: 'BID', is_buy: true, base: '0.01', volume: '0.01', counter: '3000', fee_base: '0', fee_counter: '4.5' },
+        { sequence: 6, timestamp: 1761800100000, type: 'ASK', is_buy: false, base: '0.005', volume: '0.005', counter: '1500', fee_base: '0', fee_counter: '2' },
       ] });
     }
     return json({}, 400);
@@ -390,4 +390,19 @@ test('sync: a normal run never deletes older Luno rows, a full read does, and sa
   assert.ok(removal, 'the full read removes the row it no longer returns');
   assert.ok(removal.url.includes('luno:reward:s1:99') && !removal.url.includes('luno:reward:s1:2'));
   assert.match(full.outcomes[0].message, /Full Luno history read: 1 rows\. Staking rewards: ADA 0\.5/);
+});
+
+
+test('Luno trades: the side is the type of the user\'s own order, not is_buy of the market taker', async () => {
+  const fetchImpl = async (url) => {
+    if (!String(url).includes('pair=ADAMYR')) return json({}, 400);
+    return json({ trades: [
+      // The user's resting limit BUY was filled by someone selling (the taker). is_buy is false, but the user bought.
+      { sequence: 1, timestamp: 1761800000000, type: 'BID', is_buy: false, base: '10', volume: '50', counter: '30', fee_base: '0.01', fee_counter: '0' },
+      // The user's resting limit SELL was filled by someone buying. is_buy is true, but the user sold.
+      { sequence: 2, timestamp: 1761800100000, type: 'ASK', is_buy: true, base: '4', volume: '4', counter: '12', fee_base: '0', fee_counter: '0.04' },
+    ] });
+  };
+  const rows = await fetchLunoTrades({ keyId: 'a', keySecret: 'b', fetchImpl });
+  assert.deepEqual(rows.map((r) => [r.side, r.qty, r.cash_amount]), [['buy', 9.99, 30], ['sell', 4, 11.96]], 'quantity is the filled amount (base), not the order volume');
 });
