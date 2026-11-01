@@ -99,6 +99,8 @@ function needsCryptoLedgerRebuild({ tradeRows, importedRows, leftoverRewardRows 
   for (const tx of importedRows) {
     const extId = tx.external_id;
     if (!extId) continue;
+    // A send saved by an older version also credited the coins to a Pionex holding. Rebuild once to remove that holding.
+    if (extId.startsWith('luno:transfer:') && String(tx.to_account ?? '').startsWith('Pionex ')) return true;
     // If an old luno:inflow or luno:transfer was paired/cancelled as a staking move, it won't be in broker_trades
     if ((extId.startsWith('luno:inflow:') || extId.startsWith('luno:transfer:')) && !validTradeMap.has(extId)) {
       return true;
@@ -231,7 +233,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
 
     let [tradeRows, importedRows, leftoverRewardRows, positionRows, balances, marketPrices] = await Promise.all([
       database.select('broker_trades', 'select=*&order=traded_at.asc,external_id.asc'),
-      database.select('transactions', 'select=id,external_id,total_myr,note,kind&external_id=not.is.null'),
+      database.select('transactions', 'select=id,external_id,total_myr,note,kind,to_account&external_id=not.is.null'),
       database.select('transactions', `select=id&external_id=is.null&note=eq.${encodeURIComponent(STAKING_REWARD_NOTE)}`),
       database.select('portfolio', 'select=*&order=id.asc'),
       database.select('broker_balances', 'select=broker,asset,qty'),

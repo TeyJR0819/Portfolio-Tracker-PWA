@@ -109,34 +109,25 @@ test('plan: a missing exchange rate is reported instead of guessing', () => {
   assert.deepEqual(result.importedIds, []);
 });
 
-test('plan: transfer_to_pionex deducts from Luno and adds to Pionex with proportional cost basis', () => {
+test('plan: a send out of Luno keeps the average cost, books no profit or loss, and adds nothing to Pionex', () => {
   const lunoAda = { id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 2414.88934, costMyr: 4829.78, realisedPl: 0 };
-  const transfer = trade('t1', {
-    asset: 'ADA',
-    side: 'transfer_to_pionex',
-    qty: 1008.2163699,
-    cashAmount: 0,
-    quoteCurrency: 'MYR',
-  });
+  const transfer = trade('t1', { asset: 'ADA', side: 'transfer_to_pionex', qty: 1008.2163699, cashAmount: 0, quoteCurrency: 'MYR' });
   const result = planTradeImport({ trades: [transfer], positions: [lunoAda], marketPrices: { cardano: 2.0 } });
   assert.equal(result.message, '');
   assert.deepEqual(result.importedIds, ['t1']);
 
   const newLuno = result.positions.find((p) => p.broker === 'Luno' && p.asset === 'ADA');
-  const newPionex = result.positions.find((p) => p.broker === 'Pionex' && p.asset === 'ADA');
-
   assert.equal(newLuno.qty, Number((2414.88934 - 1008.2163699).toFixed(8)));
-  assert.equal(newPionex.qty, 1008.2163699);
-  assert.equal(newPionex.costMyr, 2016.43);
   assert.equal(newLuno.costMyr, Number((4829.78 - 2016.43).toFixed(2)));
+  assert.ok(Math.abs(newLuno.costMyr / newLuno.qty - 2) < 1e-4, 'the average cost per coin is unchanged');
   assert.equal(newLuno.realisedPl, 0);
-  assert.equal(newPionex.realisedPl, 0);
+  assert.ok(!result.positions.some((p) => p.broker === 'Pionex'), 'no Pionex holding is created from a Luno send');
 
   const record = result.records[0];
   assert.equal(record.kind, 'transfer');
-  assert.equal(record.note, 'Transferred 1008.2163699 ADA from Luno to Pionex');
+  assert.equal(record.realisedPl, 0);
   assert.equal(record.fromAccount, 'Luno ADA');
-  assert.equal(record.toAccount, 'Pionex ADA');
+  assert.equal(record.toAccount, 'Outside (sent from Luno)');
 });
 
 test('plan: an inflow with cashAmount 0 uses market price for cost basis', () => {
