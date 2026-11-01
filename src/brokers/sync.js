@@ -18,6 +18,7 @@ const BALANCES_TABLE = 'broker_balances';
 const STATUS_TABLE = 'broker_sync_status';
 const TRADES_TABLE = 'broker_trades';
 const TRADES_BATCH_SIZE = 200;
+const OBSOLETE_BATCH_SIZE = 50; // Keeps the delete address short.
 
 // pages = 1 reads the newest 100 trades per coin per run (normal operation).
 // pages = 0 reads ALL available history page by page (backfill mode, unlimited).
@@ -47,7 +48,7 @@ const BROKERS = Object.freeze([
     read: (env, fetchImpl) => fetchLunoBalances({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl }),
     readTrades: (env, fetchImpl, pages) => fetchLunoTrades({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl, pages }),
     // Transfers are read separately so a failure here never blocks the trade sync.
-    readTransfers: (env, fetchImpl, pages) => fetchLunoTransfers({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl, pages }),
+    readTransfers: (env, fetchImpl, pages, wait) => fetchLunoTransfers({ keyId: env.LUNO_KEY_ID, keySecret: env.LUNO_KEY_SECRET, fetchImpl, pages, wait }),
   },
   {
     name: 'Pionex',
@@ -63,6 +64,17 @@ const BROKERS = Object.freeze([
     read: (env, fetchImpl) => fetchIbkrBalances({ token: env.IBKR_FLEX_TOKEN, queryId: env.IBKR_FLEX_QUERY_ID, fetchImpl }),
   },
 ]);
+
+// One short line for a full read: how many rows came back and the staking reward total per coin.
+// Compare these totals with the Luno app. They are the reward amounts the ledger will record.
+function describeFullRead(rows) {
+  const rewards = new Map();
+  for (const row of rows) {
+    if (row.side === 'staking_reward') rewards.set(row.asset, (rewards.get(row.asset) ?? 0) + Number(row.qty));
+  }
+  const text = [...rewards].map(([asset, qty]) => `${asset} ${Number(qty.toFixed(6))}`).join(', ');
+  return `Full Luno history read: ${rows.length} rows. Staking rewards: ${text || 'none'}.`;
+}
 
 // Saves the trades of a broker that offers them. A trade problem never marks the balances as failed.
 // Returns a short note for the status line ('' when all is well).
@@ -85,24 +97,30 @@ async function syncTrades(broker, env, fetchImpl, database, wait) {
   // Also sync on-chain transfers, instant buys and staking rewards for Luno.
   if (broker.readTransfers) {
     try {
-      const pages = env.TRADES_BACKFILL === 'true' ? BACKFILL_PAGES : RECENT_PAGES;
-      const transfers = await broker.readTransfers(env, fetchImpl, pages);
-      // Remove old misclassified Luno transfer/inflow rows that are no longer emitted (e.g. internal staking moves)
-      const currentIds = new Set(transfers.map((row) => row.external_id));
-      try {
-        const existing = await database.select(TRADES_TABLE, 'select=external_id&broker=eq.Luno');
-        const obsoleteIds = existing
-          .map((r) => r.external_id)
-          .filter((id) => id && (id.startsWith('luno:transfer:') || id.startsWith('luno:inflow:') || id.startsWith('luno:reward:')) && !currentIds.has(id));
-        if (obsoleteIds.length > 0) {
-          await database.remove(TRADES_TABLE, `external_id=in.(${obsoleteIds.join(',')})`);
+      const isFullRead = env.TRADES_BACKFILL === 'true';
+      const transfers = await broker.readTransfers(env, fetchImpl, isFullRead ? BACKFILL_PAGES : RECENT_PAGES, wait);
+
+      // Old rows that are no longer produced (for example an internal staking move that was once read as a reward) are
+      // removed, but ONLY after a full read. A normal run sees just the newest rows, so every older row would look
+      // "obsolete" and be deleted, and the ledger would then be rebuilt from a shortened history.
+      if (isFullRead) {
+        const currentIds = new Set(transfers.map((row) => row.external_id));
+        try {
+          const existing = await database.select(TRADES_TABLE, 'select=external_id&broker=eq.Luno');
+          const obsoleteIds = existing
+            .map((r) => r.external_id)
+            .filter((id) => id && (id.startsWith('luno:transfer:') || id.startsWith('luno:inflow:') || id.startsWith('luno:reward:')) && !currentIds.has(id));
+          for (let start = 0; start < obsoleteIds.length; start += OBSOLETE_BATCH_SIZE) {
+            await database.remove(TRADES_TABLE, `external_id=in.(${obsoleteIds.slice(start, start + OBSOLETE_BATCH_SIZE).join(',')})`);
+          }
+        } catch {
+          // Non-fatal if cleanup query is skipped in a minimal mock
         }
-      } catch {
-        // Non-fatal if cleanup query is skipped in a minimal mock
       }
       for (let start = 0; start < transfers.length; start += TRADES_BATCH_SIZE) {
         await database.upsert(TRADES_TABLE, transfers.slice(start, start + TRADES_BATCH_SIZE), 'external_id');
       }
+      if (isFullRead) notes.push(describeFullRead(transfers));
     } catch (error) {
       notes.push(`Transfers: ${String(error.message ?? 'Unknown error.').slice(0, 120)}`);
     }

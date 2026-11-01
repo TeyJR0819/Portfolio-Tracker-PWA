@@ -230,7 +230,7 @@ Do these steps once:
 
 1. Run `sql/broker-sync.sql` again in the Supabase SQL Editor (with your User UID). It adds the `broker_trades` table and a trade ID column on `transactions`. It is safe to run twice.
 2. Deploy. Cloudflare registers both schedules from `wrangler.toml`.
-3. To read your **full history** instead of only the newest 100 trades per coin, add the plain Cloudflare variable `TRADES_BACKFILL` with the value `true`. Deploy, wait for two cycles (about 30 minutes), then delete the variable and deploy again. The backfill reads up to 500 trades per coin.
+3. To read your **full history** instead of only the newest 100 trades per coin, add the plain Cloudflare variable `TRADES_BACKFILL` with the value `true`. Deploy and wait for two cycles (about 30 minutes). A full read pulls every Luno trade and every account movement, including all staking rewards. When it succeeds, the Luno status line says "Full Luno history read: N rows. Staking rewards: ADA ..., LINK ...". Compare those totals with the Luno app, then delete the variable and deploy again.
 4. Open the dashboard and press **Refresh**.
 
 Rules the sync follows:
@@ -317,6 +317,9 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 - The Luno balance adds the normal wallet and the staking wallet of each coin (Luno marks staking accounts with `account_type: STAKING`; the key needs "View staking").
 - Moving coins between the wallet and the staking wallet is not a trade. Both sides cancel out, so staked coins keep the buying price of the normal wallet.
 - Every staking reward is recorded as a buy at RM 0.00 cost, so the average price falls and the coins carry full value.
+- A history page that Luno refuses or rate limits (429) is retried, and if it still fails, the whole read fails with a message on the Luno status line. The sync never keeps a shortened history.
+- Older saved Luno rows are cleaned up only after a full read (`TRADES_BACKFILL`), never after a normal run.
+- A leftover ledger line "Staking reward (Luno), cost RM 0.00" without a trade ID comes from an older version. The Ledger sync removes it and rebuilds the crypto lines once from the saved history.
 
 ## Luno balance check
 

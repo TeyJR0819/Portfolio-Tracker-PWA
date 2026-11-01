@@ -33,6 +33,8 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
 
     const filter = address.searchParams.get('id');
     const matches = (row) => {
+      if (address.searchParams.get('external_id') === 'not.is.null') return Boolean(row.external_id);
+      if (address.searchParams.get('note')?.startsWith('eq.')) return row.note === address.searchParams.get('note').slice(3);
       if (!filter) return true;
       if (filter.startsWith('eq.')) return String(row.id) === filter.slice(3);
       if (filter.startsWith('in.(')) return filter.slice(4, -1).split(',').includes(String(row.id));
@@ -42,6 +44,8 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
     if (method === 'GET') {
       let rows = [...data[table]];
       if (address.searchParams.get('external_id') === 'not.is.null') rows = rows.filter((row) => row.external_id);
+      if (address.searchParams.get('external_id') === 'is.null') rows = rows.filter((row) => !row.external_id);
+      if (address.searchParams.get('note')?.startsWith('eq.')) rows = rows.filter((row) => row.note === address.searchParams.get('note').slice(3));
       if (hooks.staleImported && table === 'transactions') rows = [];
       if (address.searchParams.get('order') === 'id.desc') rows.sort((a, b) => b.id - a.id);
       const offset = Number(address.searchParams.get('offset') ?? 0);
@@ -267,4 +271,17 @@ test('schedules: the ledger schedule in wrangler.toml matches the Worker, and ea
   } finally {
     globalThis.fetch = original;
   }
+});
+
+
+test('ledger sync: an old "Staking reward" line without a trade id is removed and the coins are rebuilt from the history', async () => {
+  const tables = baseTables();
+  tables.portfolio = [{ id: 1, category: 'Crypto', broker: 'Luno', asset: 'BTC', qty: 0.01, cost_myr: 3004.5, realised_pl: 0 }]; // equals the Luno balance, so only the leftover line can trigger the rebuild
+  tables.transactions = [{ id: 1, external_id: null, kind: 'buy', broker: 'Luno', asset: 'BTC', qty: 5, total_myr: 0, note: 'Staking reward (Luno), cost RM 0.00' }];
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.ok(!fake.data.transactions.some((row) => !row.external_id && row.note === 'Staking reward (Luno), cost RM 0.00'), 'the leftover line is gone');
+  assert.equal(find(fake.data, 'Luno', 'BTC').qty, 0.01, 'the quantity now comes from the trade history only');
 });

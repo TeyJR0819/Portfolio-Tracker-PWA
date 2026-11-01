@@ -114,3 +114,77 @@ test('transfers: two instant buys close together each keep their own RM cost', a
   const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl: fakeLuno({ wallet, transactions }) });
   assert.deepEqual(rows.map((r) => [r.qty, r.cash_amount]), [[30, 50], [45, 80]]);
 });
+
+const noWait = async () => {};
+const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+
+test('transfers: the staking account listed first and without a label is still told apart by its reward rows', async () => {
+  const t = 1_760_000_000_000;
+  const accounts = [
+    { account_id: 'myr1', asset: 'MYR', balance: '0' },
+    { account_id: 's1', asset: 'ADA', balance: '10.5' },
+    { account_id: 'w1', asset: 'ADA', balance: '100' },
+  ];
+  const transactions = {
+    w1: [{ row_index: 1, timestamp: t, balance_delta: '100', kind: 'EXCHANGE', description: 'Bought 100 ADA for RM 250.00' }],
+    s1: [{ row_index: 1, timestamp: t + 86_400_000, balance_delta: '0.5', kind: 'INTEREST', description: 'Staking reward' }],
+  };
+  const fetchImpl = async (url) => {
+    const text = String(url);
+    const id = text.match(/accounts\/(\w+)\/transactions/)?.[1];
+    if (id) return reply({ transactions: transactions[id] ?? [] });
+    // Luno applies the account_type filter. None of these accounts carries a type, so the STAKING query finds nothing.
+    if (text.includes('account_type=STAKING') && !text.includes('TRANSACTIONAL')) return reply({ balance: [] });
+    return reply({ balance: accounts });
+  };
+  const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl, wait: noWait });
+  assert.deepEqual(rows.map((r) => [r.side, r.qty]).sort(), [['buy', 100], ['staking_reward', 0.5]]);
+});
+
+test('transfers: a full read pages through more than 1000 rows of one account', async () => {
+  const total = 1005;
+  const all = Array.from({ length: total }, (_, i) => ({ row_index: i + 1, timestamp: 1_700_000_000_000 + i * 60_000, balance_delta: '1', kind: 'TRANSFER', description: 'Received' }));
+  const requested = [];
+  const fetchImpl = async (url) => {
+    const text = String(url);
+    const match = text.match(/accounts\/(\w+)\/transactions\?min_row=(-?\d+)&max_row=(-?\d+)/);
+    if (match) {
+      if (match[1] === 'w1') requested.push([Number(match[2]), Number(match[3])]);
+      const [min, max] = [Number(match[2]), Number(match[3])];
+      return reply({ transactions: match[1] === 'w1' ? all.filter((row) => row.row_index >= min && row.row_index < max) : [] });
+    }
+    return reply({ balance: wallet });
+  };
+  const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl, wait: noWait });
+  assert.equal(rows.length, total);
+  assert.deepEqual(requested, [[1, 1001], [1001, 2001]]);
+});
+
+test('transfers: a failed history page is an error, never a shorter history', async () => {
+  const fetchImpl = async (url) => {
+    const text = String(url);
+    if (text.includes('accounts/w1/transactions')) return reply({}, 500);
+    return reply({ balance: wallet });
+  };
+  await assert.rejects(fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl, wait: noWait }), /status 500/);
+
+  const forbidden = async (url) => (String(url).includes('/transactions') ? reply({}, 403) : reply({ balance: wallet }));
+  await assert.rejects(fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl: forbidden, wait: noWait }), /View transactions/);
+});
+
+test('transfers: a rate limit answer (429) is retried and the history is complete', async () => {
+  let limited = 2;
+  const waits = [];
+  const fetchImpl = async (url) => {
+    const text = String(url);
+    if (text.includes('accounts/w1/transactions')) {
+      if (limited > 0) { limited -= 1; return reply({}, 429); }
+      return reply({ transactions: [{ row_index: 1, timestamp: 1_700_000_000_000, balance_delta: '5', kind: 'TRANSFER', description: 'Received' }] });
+    }
+    if (text.includes('/transactions')) return reply({ transactions: [] });
+    return reply({ balance: wallet });
+  };
+  const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl, wait: async (ms) => waits.push(ms) });
+  assert.equal(rows.length, 1);
+  assert.equal(waits.length, 2, 'one pause for each 429');
+});

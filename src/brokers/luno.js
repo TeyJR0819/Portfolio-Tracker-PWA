@@ -11,6 +11,9 @@ const LUNO_TRANSACTIONS_URL_TEMPLATE = 'https://api.luno.com/api/1/accounts/{id}
 const REQUEST_TIMEOUT_MS = 10000;
 const TRADES_PER_PAGE = 100;
 const TRANSACTIONS_PER_PAGE = 1000;
+const HISTORY_RETRIES = 5; // Luno allows 300 calls a minute. A 429 or a 5xx answer is retried, never skipped.
+const RETRY_DELAY_MS = 2000;
+const defaultWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Luno calls Bitcoin XBT. MYR cash is stored under the ledger name of the cash account.
 const ASSET_NAMES = Object.freeze({ XBT: 'BTC', MYR: 'Luno Cash' });
@@ -147,20 +150,14 @@ const PAIR_WINDOW_MS = 10 * 60 * 1000;
 const PAIR_TOLERANCE = 1e-8;
 const MYR_MATCH_WINDOW_MS = 60 * 1000;
 
+// Lists the crypto and MYR accounts to read. An account is a staking account only when Luno says so
+// (account_type or name). The old guess "the second account of a coin is the staking one" depended on the order
+// of Luno's answer: when the staking account came first, the normal wallet was read as staking and every Instant Buy
+// in it was booked as a RM 0.00 reward. The content check in markStakingByContent replaces that guess.
 async function getLunoAccountsForHistory({ keyId, keySecret, fetchImpl }) {
   const trackedSet = new Set(TRADED_ASSETS);
   const allEntries = await fetchBalanceAccounts({ keyId, keySecret, fetchImpl });
 
-  // Count how many accounts exist per crypto asset to detect secondary staking sub-accounts even if account_type is omitted
-  const countByAsset = new Map();
-  for (const entry of allEntries) {
-    const asset = ASSET_NAMES[entry.asset] ?? entry.asset;
-    if (trackedSet.has(asset) && entry.account_id) {
-      countByAsset.set(asset, (countByAsset.get(asset) ?? 0) + 1);
-    }
-  }
-
-  const seenByAsset = new Map();
   const cryptoAccounts = [];
   const myrAccounts = [];
 
@@ -172,13 +169,26 @@ async function getLunoAccountsForHistory({ keyId, keySecret, fetchImpl }) {
     }
     const asset = ASSET_NAMES[entry.asset] ?? entry.asset;
     if (trackedSet.has(asset)) {
-      const idx = seenByAsset.get(asset) ?? 0;
-      seenByAsset.set(asset, idx + 1);
-      const isStaking = isStakingAccountEntry(entry) || (countByAsset.get(asset) > 1 && idx > 0);
-      cryptoAccounts.push({ id: String(entry.account_id), asset, isStaking });
+      cryptoAccounts.push({ id: String(entry.account_id), asset, isStaking: isStakingAccountEntry(entry) });
     }
   }
   return { cryptoAccounts, myrAccounts };
+}
+
+// When a coin has several accounts and Luno did not label any of them as staking, the account that holds the
+// interest payments is the staking account. Only reward words count here: the normal wallet also says "Staked to ...".
+function markStakingByContent(cryptoAccounts, historyByAccount) {
+  const byAsset = new Map();
+  for (const account of cryptoAccounts) byAsset.set(account.asset, [...(byAsset.get(account.asset) ?? []), account]);
+  for (const accounts of byAsset.values()) {
+    if (accounts.length < 2 || accounts.some((account) => account.isStaking)) continue;
+    for (const account of accounts) {
+      const paysRewards = (historyByAccount.get(account.id) ?? []).some(
+        (txn) => Number(txn.balance_delta) > 0 && (String(txn.kind ?? '').toUpperCase() === 'INTEREST' || /reward|interest/i.test(String(txn.description ?? ''))),
+      );
+      if (paysRewards) account.isStaking = true;
+    }
+  }
 }
 
 function isRewardText(txn) {
@@ -246,40 +256,53 @@ function classifyEvent({ account, txn, delta }, matchedMyrAmount = 0) {
   return 'buy';
 }
 
-async function fetchAccountTransactions(accountId, headers, fetchImpl, unlimited) {
+// One Luno request. A 429 (rate limit) or 5xx answer is retried with a growing pause, so a busy minute never
+// leaves a hole in the history. Any other failure is thrown and names the status.
+async function getWithRetry(url, headers, fetchImpl, wait) {
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt >= HISTORY_RETRIES) return response;
+    await wait(RETRY_DELAY_MS * attempt);
+  }
+}
+
+// Reads the movements of one account. Backfill (unlimited) reads from row 1 upward, 1000 rows at a time, until a page is
+// not full. A normal run reads only the newest 1000 rows.
+// A failed page is an error. It used to stop silently and return only what was read so far. That partial list then
+// looked like the complete history, so the sync deleted the older rows and the ledger lost staking rewards.
+async function fetchAccountTransactions(accountId, headers, fetchImpl, unlimited, wait) {
   const url = LUNO_TRANSACTIONS_URL_TEMPLATE.replace('{id}', accountId);
-  // Always read from row 1 if unlimited, or latest 1000 rows so early Instant Buys are never missed!
-  let minRow = unlimited ? 1 : -1000;
-  let maxRow = unlimited ? 1001 : 0;
-  const allTxns = [];
+  let minRow = unlimited ? 1 : -TRANSACTIONS_PER_PAGE;
+  let maxRow = unlimited ? 1 + TRANSACTIONS_PER_PAGE : 0;
+  const byRow = new Map();
 
   for (;;) {
-    const response = await fetchImpl(`${url}?min_row=${minRow}&max_row=${maxRow}`, {
-      headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (response.status === 403 || !response.ok) break;
+    const response = await getWithRetry(`${url}?min_row=${minRow}&max_row=${maxRow}`, headers, fetchImpl, wait);
+    if (response.status === 403) {
+      throw new Error('Luno refused the account history (403). The key needs "View transactions" and "View staking".');
+    }
+    if (!response.ok) throw new Error(`Luno answered with status ${response.status} for the account history.`);
 
-    const txns = (await response.json().catch(() => ({}))).transactions ?? [];
-    allTxns.push(...txns);
+    const body = await response.json().catch(() => null);
+    if (!body || !Array.isArray(body.transactions ?? [])) throw new Error('Luno sent an account history that could not be read.');
+    const txns = body.transactions ?? [];
+    for (const txn of txns) byRow.set(`${txn.row_index}`, txn);
 
     if (!unlimited || txns.length < TRANSACTIONS_PER_PAGE) break;
     minRow += TRANSACTIONS_PER_PAGE;
     maxRow += TRANSACTIONS_PER_PAGE;
   }
-  return allTxns;
+  return [...byRow.values()];
 }
 
-export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, pages = 1 }) {
+export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, pages = 1, wait = defaultWait }) {
   const headers = { Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}` };
   let cryptoAccounts = [];
   let myrAccounts = [];
 
-  try {
-    ({ cryptoAccounts, myrAccounts } = await getLunoAccountsForHistory({ keyId, keySecret, fetchImpl }));
-  } catch {
-    return [];
-  }
+  // A failure here is thrown to the caller. Returning an empty list would look like "no history" and delete the saved rows.
+  ({ cryptoAccounts, myrAccounts } = await getLunoAccountsForHistory({ keyId, keySecret, fetchImpl }));
   if (cryptoAccounts.length === 0) return [];
 
   const unlimited = pages === 0;
@@ -289,7 +312,7 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
   const myrEvents = []; // [{ delta, isFee, timestamp, reference, used }]
 
   for (const myrAcc of myrAccounts) {
-    const txns = await fetchAccountTransactions(myrAcc.id, headers, fetchImpl, unlimited);
+    const txns = await fetchAccountTransactions(myrAcc.id, headers, fetchImpl, unlimited, wait);
     for (const txn of txns) {
       if (txn.detail_fields?.trade_details) continue;
       const delta = Number(txn.balance_delta);
@@ -308,9 +331,16 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
     }
   }
 
+  // Read every account first, so a staking account without a label can be recognised before any movement is classified.
+  const historyByAccount = new Map();
+  for (const account of cryptoAccounts) {
+    historyByAccount.set(account.id, await fetchAccountTransactions(account.id, headers, fetchImpl, unlimited, wait));
+  }
+  markStakingByContent(cryptoAccounts, historyByAccount);
+
   const events = [];
   for (const account of cryptoAccounts) {
-    const txns = await fetchAccountTransactions(account.id, headers, fetchImpl, unlimited);
+    const txns = historyByAccount.get(account.id);
 
     // Group fees on the crypto side by reference or timestamp so crypto-denominated Instant Buy fees are accounted for
     const cryptoFeeByRef = new Map();
