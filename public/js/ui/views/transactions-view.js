@@ -49,8 +49,12 @@ function describeAmount(record) {
       const targetCurrency = findAccount(record.toAccount)?.currency ?? record.currency;
       return `${formatForeign(record.amountFrom, record.currency)} to ${formatForeign(record.amountTo, targetCurrency)}`;
     }
-    case 'adjust':
-      return `${record.qty >= 0 ? '+' : '-'}${formatForeign(Math.abs(record.qty), record.currency)}`;
+    case 'adjust': {
+      const sign = record.qty >= 0 ? '+' : '-';
+      // Cash accounts are money. Every other adjustment is a number of coins or units, not RM.
+      if (findAccount(record.asset)) return `${sign}${formatForeign(Math.abs(record.qty), record.currency)}`;
+      return `${sign}${formatQuantity(Math.abs(record.qty), 6)} ${record.asset}`;
+    }
     case 'mmf_gain':
       return `+${formatForeign(record.qty, record.currency)}`;
     default:

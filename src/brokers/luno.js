@@ -88,6 +88,16 @@ export async function fetchLunoBalances({ keyId, keySecret, fetchImpl = fetch })
   return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
 }
 
+// The side of the USER's order. Luno's `type` is the type of the order the user placed (BID = buy, ASK = sell).
+// `is_buy` describes the other party, the market taker: for a limit order that rested in the book it says the
+// opposite of what the user did. Reading `is_buy` first turned many buys into sells, so the ledger ended with no coins.
+function tradeSide(trade) {
+  const type = String(trade.type ?? '').toUpperCase();
+  if (type === 'BID') return 'buy';
+  if (type === 'ASK') return 'sell';
+  return trade.is_buy ? 'buy' : 'sell';
+}
+
 // Reads the latest trades of every tracked coin against MYR.
 // pages === 0 (backfill mode) reads until Luno has no more trades.
 export async function fetchLunoTrades({ keyId, keySecret, fetchImpl = fetch, pages = 1 }) {
@@ -113,8 +123,8 @@ export async function fetchLunoTrades({ keyId, keySecret, fetchImpl = fetch, pag
           externalId: `luno:${pair}:${trade.sequence}`,
           broker: 'Luno',
           asset,
-          side: trade.is_buy === undefined ? (trade.type === 'BID' ? 'buy' : 'sell') : trade.is_buy ? 'buy' : 'sell',
-          baseQty: Number(trade.volume ?? trade.base),
+          side: tradeSide(trade),
+          baseQty: Number(trade.base ?? trade.volume),
           quoteAmount: Number(trade.counter),
           feeBase: Number(trade.fee_base ?? 0),
           feeQuote: Number(trade.fee_counter ?? 0),

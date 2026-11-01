@@ -35,6 +35,7 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
     const matches = (row) => {
       if (address.searchParams.get('external_id') === 'not.is.null') return Boolean(row.external_id);
       if (address.searchParams.get('note')?.startsWith('eq.')) return row.note === address.searchParams.get('note').slice(3);
+      if (address.searchParams.get('note')?.startsWith('like.')) return String(row.note).startsWith(address.searchParams.get('note').slice(5).replace(/\*$/, ''));
       if (!filter) return true;
       if (filter.startsWith('eq.')) return String(row.id) === filter.slice(3);
       if (filter.startsWith('in.(')) return filter.slice(4, -1).split(',').includes(String(row.id));
@@ -284,4 +285,21 @@ test('ledger sync: an old "Staking reward" line without a trade id is removed an
   assert.equal(outcome.ok, true, outcome.message);
   assert.ok(!fake.data.transactions.some((row) => !row.external_id && row.note === 'Staking reward (Luno), cost RM 0.00'), 'the leftover line is gone');
   assert.equal(find(fake.data, 'Luno', 'BTC').qty, 0.01, 'the quantity now comes from the trade history only');
+});
+
+
+test('ledger sync: trades saved with the wrong side by an older version are rebuilt with the right side', async () => {
+  const tables = baseTables();
+  // The history says the first trade is a buy, but the ledger recorded it as a sell.
+  tables.transactions = [
+    { id: 1, external_id: 'luno:XBTMYR:1', kind: 'sell', broker: 'Luno', asset: 'BTC', qty: 0.02, total_myr: 6009, note: 'Imported from Luno' },
+    { id: 2, external_id: null, kind: 'adjust', broker: 'Luno', asset: 'BTC', qty: 0.5, total_myr: 10, note: 'Balance corrected to the Luno balance (+0.5 BTC not explained by the history)' },
+  ];
+  tables.portfolio = [{ id: 1, category: 'Crypto', broker: 'Luno', asset: 'BTC', qty: 0.01, cost_myr: 3004.5, realised_pl: 0 }];
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.equal(fake.data.transactions.find((row) => row.external_id === 'luno:XBTMYR:1').kind, 'buy');
+  assert.ok(!fake.data.transactions.some((row) => String(row.note).startsWith('Balance corrected')));
 });
