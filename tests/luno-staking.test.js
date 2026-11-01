@@ -188,3 +188,33 @@ test('transfers: a rate limit answer (429) is retried and the history is complet
   assert.equal(rows.length, 1);
   assert.equal(waits.length, 2, 'one pause for each 429');
 });
+
+
+test('transfers: coins sent to an outside address are a transfer, never a sale, even when Luno shows an RM value', async () => {
+  const t = 1_760_000_000_000;
+  const transactions = {
+    w1: [
+      { row_index: 1, timestamp: t, balance_delta: '500', kind: 'EXCHANGE', description: 'Bought 500 ADA for RM 600.00' },
+      { row_index: 2, timestamp: t + 60_000, balance_delta: '-174', kind: 'TRANSFER', description: 'Sent Cardano to addr1vy88n0yd', details: { 'Value (MYR)': '496.14' }, detail_fields: { crypto_details: { address: 'addr1vy88n0yd', txid: 'abc' } } },
+      { row_index: 3, timestamp: t + 60_000, balance_delta: '-0.310762', kind: 'FEE', description: 'Cardano send fee' },
+      // A send that has no crypto_details but says "Sent" and shows an amount is also a transfer.
+      { row_index: 4, timestamp: t + 120_000, balance_delta: '-9.37', kind: 'TRANSFER', description: 'Sent Cardano to addr1vy88', details: { amount: '23.89' } },
+    ],
+  };
+  const rows = await fetchLunoTransfers({ ...AUTH, pages: 0, fetchImpl: fakeLuno({ wallet, transactions }), wait: noWait });
+  assert.deepEqual(rows.map((r) => [r.external_id, r.side, r.qty, r.cash_amount]), [
+    ['luno:inflow:w1:1', 'buy', 500, 600],
+    ['luno:transfer:w1:2', 'transfer_to_pionex', 174, 0],
+    ['luno:transfer:w1:4', 'transfer_to_pionex', 9.37, 0],
+  ]);
+
+  // In the ledger the send keeps the Luno average cost and books no profit or loss.
+  const imported = planTradeImport({
+    trades: rows.map((r) => ({ externalId: r.external_id, broker: r.broker, asset: r.asset, side: r.side, qty: r.qty, cashAmount: r.cash_amount, feeQuote: r.fee_quote, quoteCurrency: 'MYR', tradedAt: Date.parse(r.traded_at) })),
+    positions: [], marketPrices: {},
+  });
+  const luno = imported.positions.find((p) => p.broker === 'Luno' && p.asset === 'ADA');
+  assert.equal(luno.realisedPl, 0);
+  assert.equal(luno.qty, 500 - 174 - 9.37);
+  assert.equal(Number((luno.costMyr / luno.qty).toFixed(4)), 1.2, 'the average cost per coin is unchanged');
+});
