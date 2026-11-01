@@ -255,12 +255,22 @@ export function pairOwnMoves(events) {
   return paired;
 }
 
+// A coin sent to an outside address (for example to Pionex). Luno shows the RM value of the coins in the description or
+// details of such a row. That value is only a label: no MYR arrived, so it is not a sale. Reading it as one booked a
+// false sale at that price, with a realised loss, and removed the cost of the coins.
+function isCryptoSend(txn) {
+  if (txn.detail_fields?.crypto_details) return true;
+  if (String(txn.kind ?? '').toUpperCase() === 'EXCHANGE') return false;
+  return /\b(sent|send|withdraw|withdrawal)\b/i.test(String(txn.description ?? ''));
+}
+
 function classifyEvent({ account, txn, delta }, matchedMyrAmount = 0) {
   if (delta > 0 && (isRewardText(txn) || (account.isStaking && !isStakeMoveText(txn)))) return 'staking_reward';
   if (account.isStaking || isStakeMoveText(txn)) return null; // principal moving in or out of staking
-  const isExchange = String(txn.kind ?? '').toUpperCase() === 'EXCHANGE' || matchedMyrAmount > 0 || parseMyrFromText(txn) > 0;
   if (delta < 0) {
-    // If MYR arrived for this outflow (or kind === EXCHANGE), it's an Instant Sell, not a transfer to Pionex!
+    if (isCryptoSend(txn)) return 'transfer_to_pionex';
+    // Only a real exchange (MYR arrived, or Luno calls it an exchange) is an Instant Sell.
+    const isExchange = String(txn.kind ?? '').toUpperCase() === 'EXCHANGE' || matchedMyrAmount > 0;
     return isExchange ? 'sell' : 'transfer_to_pionex';
   }
   return 'buy';
@@ -419,9 +429,9 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
       }
     }
 
-    if (cashAmount <= 0) {
-      cashAmount = parseMyrFromText(txn);
-    }
+    const isSend = delta < 0 && isCryptoSend(txn);
+    if (isSend) cashAmount = 0; // a send has no MYR amount
+    else if (cashAmount <= 0) cashAmount = parseMyrFromText(txn);
 
     const side = classifyEvent(event, cashAmount);
     if (!side) return;
