@@ -14,7 +14,11 @@ const FILLS_PER_PAGE = 100; // Pionex returns at most the latest 100 fills per r
 const REQUEST_TIMEOUT_MS = 10000;
 const USER_AGENT = 'portfolio-tracker-worker/1.0';
 
-const ASSET_NAMES = Object.freeze({ USDT: 'Pionex Cash' });
+// Toncoin (TON) was renamed Gram (GRAM) in June 2026. The app keeps the name TON.
+const ASSET_NAMES = Object.freeze({ USDT: 'Pionex Cash', GRAM: 'TON' });
+// Markets to read for each tracked coin. Older fills may still be listed under the old name.
+const MARKET_NAMES = Object.freeze({ TON: ['GRAM', 'TON'] });
+const marketList = () => TRADED_ASSETS.flatMap((asset) => (MARKET_NAMES[asset] ?? [asset]).map((market) => [asset, market]));
 
 export async function sign(secret, message) {
   const encoder = new TextEncoder();
@@ -124,8 +128,8 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
 
   const unlimited = pages === 0;
 
-  for (const asset of TRADED_ASSETS) {
-    const symbol = `${asset}_USDT`;
+  for (const [asset, market] of marketList()) {
+    const symbol = `${market}_USDT`;
     let endTime = null;
     let page = 0;
 
