@@ -264,6 +264,12 @@ function isCryptoSend(txn) {
   return /\b(sent|send|withdraw|withdrawal)\b/i.test(String(txn.description ?? ''));
 }
 
+// The fee Luno takes for sending a coin out, for example "Cardano send fee".
+function isSendFeeText(txn) {
+  const text = String(txn.description ?? '').toLowerCase();
+  return text.includes('fee') && /\b(send|sent|withdraw\w*)\b/.test(text);
+}
+
 function classifyEvent({ account, txn, delta }, matchedMyrAmount = 0) {
   if (delta > 0 && (isRewardText(txn) || (account.isStaking && !isStakeMoveText(txn)))) return 'staking_reward';
   if (account.isStaking || isStakeMoveText(txn)) return null; // principal moving in or out of staking
@@ -359,6 +365,7 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
   markStakingByContent(cryptoAccounts, historyByAccount);
 
   const events = [];
+  const feeRows = [];
   for (const account of cryptoAccounts) {
     const txns = historyByAccount.get(account.id);
 
@@ -369,6 +376,20 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
       if (isFee && txn.reference) {
         const d = Math.abs(Number(txn.balance_delta) || 0);
         cryptoFeeByRef.set(txn.reference, (cryptoFeeByRef.get(txn.reference) ?? 0) + d);
+      }
+    }
+
+    // The network fee of a send ("Cardano send fee") is its own row. The fee coins leave Luno, but their cost stays.
+    if (!account.isStaking) {
+      for (const txn of txns) {
+        const delta = Number(txn.balance_delta);
+        if (!Number.isFinite(delta) || delta >= 0 || txn.detail_fields?.trade_details) continue;
+        if (!isSendFeeText(txn)) continue;
+        feeRows.push({
+          external_id: `luno:txfee:${account.id}:${txn.row_index}`, broker: 'Luno', asset: account.asset, side: 'send_fee',
+          qty: Number(Math.abs(delta).toFixed(8)), cash_amount: 0, fee_quote: 0, quote_currency: 'MYR',
+          traded_at: new Date(Number(txn.timestamp)).toISOString(),
+        });
       }
     }
 
@@ -450,5 +471,5 @@ export async function fetchLunoTransfers({ keyId, keySecret, fetchImpl = fetch, 
     });
   });
 
-  return rows;
+  return [...rows, ...feeRows];
 }

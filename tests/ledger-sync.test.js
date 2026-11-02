@@ -305,23 +305,23 @@ test('ledger sync: trades saved with the wrong side by an older version are rebu
 });
 
 
-test('ledger sync: a Pionex holding made by an old Luno send is removed, and Luno keeps its coins and average cost', async () => {
+test('ledger sync: a send saved as “Outside” by the previous version is rebuilt so Pionex receives the coins and their cost', async () => {
   const tables = baseTables();
   tables.broker_balances.push({ broker: 'Luno', asset: 'ADA', qty: 60 });
   tables.broker_trades.push(
     trade('luno:inflow:a1:1', { asset: 'ADA', qty: 100, cash_amount: 200, traded_at: new Date(T0).toISOString() }),
     trade('luno:transfer:a1:2', { asset: 'ADA', side: 'transfer_to_pionex', qty: 40, cash_amount: 0, traded_at: new Date(T0 + DAY).toISOString() }),
   );
-  tables.transactions = [{ id: 1, external_id: 'luno:transfer:a1:2', kind: 'transfer', broker: 'Luno', asset: 'ADA', qty: 40, total_myr: 80, to_account: 'Pionex ADA', note: 'Transferred 40 ADA from Luno to Pionex' }];
+  tables.transactions = [{ id: 1, external_id: 'luno:transfer:a1:2', kind: 'transfer', broker: 'Luno', asset: 'ADA', qty: 40, total_myr: 80, to_account: 'Outside (sent from Luno)', note: 'Sent 40 ADA out of Luno (no profit or loss)' }];
   tables.portfolio = [
     { id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 60, cost_myr: 120, realised_pl: 0 },
-    { id: 2, category: 'Crypto', broker: 'Pionex', asset: 'ADA', qty: 40, cost_myr: 80, realised_pl: 0 },
   ];
   const fake = createFakeSupabase({ tables });
   const outcome = await run(fake);
 
   assert.equal(outcome.ok, true, outcome.message);
-  assert.equal(find(fake.data, 'Pionex', 'ADA').qty, 0);
+  assert.equal(find(fake.data, 'Pionex', 'ADA').qty, 40);
+  assert.equal(find(fake.data, 'Pionex', 'ADA').cost_myr, 80);
   assert.equal(find(fake.data, 'Luno', 'ADA').qty, 60);
   assert.equal(find(fake.data, 'Luno', 'ADA').cost_myr, 120);
   assert.equal(find(fake.data, 'Luno', 'ADA').realised_pl, 0);

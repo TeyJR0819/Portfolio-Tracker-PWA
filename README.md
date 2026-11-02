@@ -243,6 +243,7 @@ Rules the sync follows:
 
 Limits you should know:
 
+- A coin sent from Luno to Pionex moves with its cost. Luno loses the amount sent and its cost, so the Luno cost basis is free of it. Pionex receives the same amount at that cost as a cash-in, with no profit or loss. The network fee coins ("send fee") leave the Luno quantity, but their cost stays in the Luno cost basis. Example: RM 3000 buys 3000 ADA and 2998 ADA are sent. Pionex holds 2998 ADA at RM 2998, and Luno keeps the remaining RM 2 of cost.
 - Deposits, withdrawals and transfers between exchanges are not imported as separate lines. Their effect on cash is covered by the cash sync, but the coins you move between exchanges, or deposit from a wallet, have no cost in the ledger. Enter those with **Transfer** or **Buy** (with "Deduct from cash" off).
 - A Pionex trade is converted from USDT to RM at the rate of the day of the sync, because the app keeps one rate. The cost of an old Pionex trade is therefore approximate.
 - A Pionex fee paid in another coin (for example a platform token) is not counted.

@@ -206,6 +206,7 @@ test('transfers: coins sent to an outside address are a transfer, never a sale, 
     ['luno:inflow:w1:1', 'buy', 500, 600],
     ['luno:transfer:w1:2', 'transfer_to_pionex', 174, 0],
     ['luno:transfer:w1:4', 'transfer_to_pionex', 9.37, 0],
+    ['luno:txfee:w1:3', 'send_fee', 0.310762, 0],
   ]);
 
   // In the ledger the send keeps the Luno average cost and books no profit or loss.
@@ -215,6 +216,9 @@ test('transfers: coins sent to an outside address are a transfer, never a sale, 
   });
   const luno = imported.positions.find((p) => p.broker === 'Luno' && p.asset === 'ADA');
   assert.equal(luno.realisedPl, 0);
-  assert.equal(luno.qty, 500 - 174 - 9.37);
-  assert.equal(Number((luno.costMyr / luno.qty).toFixed(4)), 1.2, 'the average cost per coin is unchanged');
+  assert.equal(Number(luno.qty.toFixed(6)), Number((500 - 174 - 9.37 - 0.310762).toFixed(6)));
+  assert.equal(luno.costMyr, 379.96, 'the cost of the sent coins left; the fee coins keep their cost');
+  const pionex = imported.positions.find((p) => p.broker === 'Pionex' && p.asset === 'ADA');
+  assert.equal(pionex.qty, 183.37, 'Pionex receives the sent amount, without the fee');
+  assert.equal(pionex.costMyr, 220.04);
 });

@@ -109,7 +109,7 @@ async function syncTrades(broker, env, fetchImpl, database, wait) {
           const existing = await database.select(TRADES_TABLE, 'select=external_id&broker=eq.Luno');
           const obsoleteIds = existing
             .map((r) => r.external_id)
-            .filter((id) => id && (id.startsWith('luno:transfer:') || id.startsWith('luno:inflow:') || id.startsWith('luno:reward:')) && !currentIds.has(id));
+            .filter((id) => id && (id.startsWith('luno:transfer:') || id.startsWith('luno:inflow:') || id.startsWith('luno:reward:') || id.startsWith('luno:txfee:')) && !currentIds.has(id));
           for (let start = 0; start < obsoleteIds.length; start += OBSOLETE_BATCH_SIZE) {
             await database.remove(TRADES_TABLE, `external_id=in.(${obsoleteIds.slice(start, start + OBSOLETE_BATCH_SIZE).join(',')})`);
           }

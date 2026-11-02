@@ -114,14 +114,32 @@ function planStakingReward(trade, positions) {
 
 // ---------------------------------------------------------------------------
 // On-chain transfer handling:
-// - Transfer out from Luno (side === 'send' or 'transfer_to_pionex'):
-//   The coins leave Luno at Luno's average cost, so the average cost of the coins that stay is unchanged and no
-//   profit or loss is booked. Nothing is added to Pionex. Coins sent to Pionex often go into a bot or another
-//   product, and a Pionex holding is taken from Pionex's own trades, never guessed from a Luno send. Adding the
-//   coins there created more than 2000 ADA that Pionex does not hold.
+// - Send out of Luno (side === 'send' or 'transfer_to_pionex'):
+//   The coins leave Luno together with their cost (Luno's average cost per coin), so the coins that stay keep the same
+//   average cost and Luno's cost basis is free of the amount sent. The same quantity and cost arrive at Pionex as a
+//   deposit (cash in), so Pionex starts with the cost the coins had at Luno. No profit or loss is booked.
+// - Network fee of a send (side === 'send_fee'):
+//   The fee coins leave the Luno quantity, but their cost stays in the Luno cost basis. It is not a sale.
 // - Crypto receive at Luno (side === 'receive'):
 //   Coins are deposited into Luno at market price (or cost if known).
 // ---------------------------------------------------------------------------
+function planSendFee(trade, positions) {
+  const lunoPos = findPosition(positions, 'Luno', trade.asset) ?? {
+    id: null, category: 'Crypto', broker: 'Luno', asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+  };
+  const removed = Math.min(trade.qty, lunoPos.qty);
+  const after = { ...lunoPos, qty: roundTo(Math.max(0, lunoPos.qty - removed), QUANTITY_DECIMALS) }; // the cost stays
+  if (after.qty <= QUANTITY_EPSILON) after.qty = 0;
+  const record = {
+    tradeDate: toTradeDate(trade.tradedAt), kind: 'transfer', broker: 'Luno', asset: trade.asset,
+    qty: trade.qty, price: 0, currency: 'MYR', fee: 0, rate: 1, totalMyr: 0,
+    fromAccount: `Luno ${trade.asset}`, toAccount: 'Network fee', amountFrom: trade.qty, amountTo: 0,
+    realisedPl: 0, note: `Network fee of ${trade.qty} ${trade.asset} on a send; its cost stays in the Luno cost basis`,
+    externalId: trade.externalId,
+  };
+  return { changes: [{ before: lunoPos, after }], record };
+}
+
 function planCryptoTransfer(trade, positions, marketPrices) {
   const isSend = trade.side === 'send' || trade.side === 'transfer_to_pionex';
 
@@ -155,7 +173,16 @@ function planCryptoTransfer(trade, positions, marketPrices) {
       costMyr: remainingQty <= QUANTITY_EPSILON ? 0 : remainingCost,
     };
 
-    const changes = [{ before: lunoPos, after: lunoAfter }];
+    const pionexPos = findPosition(positions, 'Pionex', trade.asset) ?? {
+      id: null, category: 'Crypto', broker: 'Pionex', asset: trade.asset, qty: 0, costMyr: 0, realisedPl: 0,
+    };
+    const movedQty = roundTo(Math.min(trade.qty, currentLuno.qty), QUANTITY_DECIMALS);
+    const pionexAfter = addUnits(pionexPos, movedQty, transferCost);
+
+    const changes = [
+      { before: lunoPos, after: lunoAfter },
+      { before: pionexPos, after: pionexAfter },
+    ];
 
     const record = {
       tradeDate: toTradeDate(trade.tradedAt),
@@ -169,11 +196,11 @@ function planCryptoTransfer(trade, positions, marketPrices) {
       rate: 1,
       totalMyr: transferCost,
       fromAccount: `Luno ${trade.asset}`,
-      toAccount: 'Outside (sent from Luno)',
+      toAccount: `Pionex ${trade.asset}`,
       amountFrom: trade.qty,
       amountTo: trade.qty,
       realisedPl: 0,
-      note: `Sent ${trade.qty} ${trade.asset} out of Luno (no profit or loss)`,
+      note: `Sent ${trade.qty} ${trade.asset} from Luno to Pionex at cost RM ${transferCost.toFixed(2)} (no profit or loss)`,
       externalId: trade.externalId,
     };
 
@@ -233,6 +260,11 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
         const reward = planStakingReward(trade, current);
         current = applyChanges(current, reward.changes);
         records.push(reward.record);
+        importedIds.push(trade.externalId);
+      } else if (trade.side === 'send_fee') {
+        const fee = planSendFee(trade, current);
+        current = applyChanges(current, fee.changes);
+        records.push(fee.record);
         importedIds.push(trade.externalId);
       } else if (trade.side === 'receive' || trade.side === 'send' || trade.side === 'transfer_to_pionex') {
         const transfer = planCryptoTransfer(trade, current, marketPrices);

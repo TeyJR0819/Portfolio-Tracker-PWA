@@ -99,10 +99,11 @@ function needsCryptoLedgerRebuild({ tradeRows, importedRows, leftoverRewardRows 
   for (const tx of importedRows) {
     const extId = tx.external_id;
     if (!extId) continue;
-    // A send saved by an older version also credited the coins to a Pionex holding. Rebuild once to remove that holding.
-    if (extId.startsWith('luno:transfer:') && String(tx.to_account ?? '').startsWith('Pionex ')) return true;
+    // A send saved by the previous version left the coins "Outside" and gave Pionex nothing. Rebuild once so the sent
+    // coins and their cost move to Pionex and the fee coins are recorded.
+    if (extId.startsWith('luno:transfer:') && tx.to_account === 'Outside (sent from Luno)') return true;
     // If an old luno:inflow or luno:transfer was paired/cancelled as a staking move, it won't be in broker_trades
-    if ((extId.startsWith('luno:inflow:') || extId.startsWith('luno:transfer:')) && !validTradeMap.has(extId)) {
+    if ((extId.startsWith('luno:inflow:') || extId.startsWith('luno:transfer:') || extId.startsWith('luno:txfee:')) && !validTradeMap.has(extId)) {
       return true;
     }
     // If an Instant Buy in broker_trades now has a real MYR cash_amount that differs from what was recorded
