@@ -211,7 +211,7 @@ How to read the result:
 
 IBKR reports the last business day, so a trade made today shows as **Differs** until the next report. To read IBKR on every run while testing, add a plain (not secret) variable `SYNC_ALWAYS` with the value `true`, then delete it afterwards.
 
-The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot and earn balances are not read, which matches the app's rules. The Pionex coins in the portfolio are set to the trading-account balance after every run, so coins inside a bot are never counted. Coins just sent from Luno are left alone for two hours, until the hourly Pionex read shows them.
+The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot balances are not read. The Earn amount (flexible products) is added to the Pionex balance of the same coin, so Earn money in USDT shows in Pionex Cash. The Earn profit field is not added, and a Dual Investment balance stops the read with a message, because it has not been checked against a real reply. The Pionex coins in the portfolio are set to the trading-account balance after every run, so coins inside a bot are never counted. Coins just sent from Luno are left alone for two hours, until the hourly Pionex read shows them.
 
 If a broker shows `status 401` or `403`, the key or its permission is wrong. Create it again and update the secret.
 

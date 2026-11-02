@@ -12,7 +12,7 @@
 import { createDatabase } from '../supabase.js';
 import { fetchIbkrBalances } from './ibkr.js';
 import { fetchLunoBalances, fetchLunoTrades, fetchLunoTransfers } from './luno.js';
-import { fetchPionexBalances, fetchPionexTrades } from './pionex.js';
+import { fetchPionexBalances, fetchPionexEarnBalances, fetchPionexTrades } from './pionex.js';
 
 const BALANCES_TABLE = 'broker_balances';
 const STATUS_TABLE = 'broker_sync_status';
@@ -56,7 +56,15 @@ const BROKERS = Object.freeze([
     name: 'Pionex',
     isConfigured: (env) => Boolean(env.PIONEX_API_KEY && env.PIONEX_API_SECRET),
     isDue: isPionexDue,
-    read: (env, fetchImpl) => fetchPionexBalances({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl }),
+    // Trading-account coins plus the Earn money. Bots stay out. Both are read, or the whole read fails.
+    read: async (env, fetchImpl, wait) => {
+      const credentials = { apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl, wait };
+      const totals = new Map();
+      for (const { asset, qty } of [...(await fetchPionexBalances(credentials)), ...(await fetchPionexEarnBalances(credentials))]) {
+        totals.set(asset, (totals.get(asset) ?? 0) + qty);
+      }
+      return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
+    },
     readTrades: (env, fetchImpl, pages, wait) => fetchPionexTrades({ apiKey: env.PIONEX_API_KEY, apiSecret: env.PIONEX_API_SECRET, fetchImpl, pages, wait }),
   },
   {
@@ -152,7 +160,7 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
   for (const broker of due) {
     const syncedAt = now().toISOString();
     try {
-      const balances = await broker.read(env, fetchImpl);
+      const balances = await broker.read(env, fetchImpl, wait);
       const rows = balances.map(({ asset, qty }) => ({ broker: broker.name, asset, qty, synced_at: syncedAt }));
       if (rows.length > 0) await database.upsert(BALANCES_TABLE, rows, 'broker,asset');
       await database.deleteOlder(BALANCES_TABLE, broker.name, syncedAt);
