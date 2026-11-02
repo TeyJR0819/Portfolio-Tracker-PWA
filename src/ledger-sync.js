@@ -33,8 +33,35 @@ const RATE_TIMEOUT_MS = 8000;
 const RECONCILE_TOLERANCE = 1e-6;
 const keyOf = (position) => `${position.broker}|${position.asset}`;
 
-// Loads USDT rate AND all tracked crypto prices in MYR, so on-chain transfers can be valued.
-async function loadMarketPrices(fetchImpl) {
+const LUNO_TICKERS_URL = 'https://api.luno.com/api/1/tickers';
+// Luno's public MYR markets, for the coins CoinGecko did not answer.
+const LUNO_MYR_PAIRS = Object.freeze({ XBTMYR: 'bitcoin', ETHMYR: 'ethereum', ADAMYR: 'cardano', LINKMYR: 'chainlink', SUIMYR: 'sui', TONMYR: 'the-open-network' });
+
+// The second source of prices. CoinGecko often refuses the shared address of a Cloudflare Worker, and without a price
+// every Pionex trade (USDT to RM) is held back. Luno's tickers need no key. The USDT to RM rate is taken from the
+// same coin in MYR and USDT (for example ETHMYR divided by ETHUSDT), so it needs no extra service.
+async function loadLunoPrices(fetchImpl) {
+  try {
+    const response = await fetchImpl(LUNO_TICKERS_URL, { signal: AbortSignal.timeout(RATE_TIMEOUT_MS) });
+    if (!response.ok) return {};
+    const last = new Map(((await response.json()).tickers ?? []).map((ticker) => [ticker.pair, Number(ticker.last_trade)]));
+    const prices = {};
+    for (const [pair, coinId] of Object.entries(LUNO_MYR_PAIRS)) {
+      if (last.get(pair) > 0) prices[coinId] = last.get(pair);
+    }
+    for (const [myrPair, usdtPair] of [['ETHMYR', 'ETHUSDT'], ['XBTMYR', 'XBTUSDT'], ['LINKMYR', 'LINKUSDT']]) {
+      if (last.get(myrPair) > 0 && last.get(usdtPair) > 0) {
+        prices[RATE_KEYS.USDT] = last.get(myrPair) / last.get(usdtPair);
+        break;
+      }
+    }
+    return prices;
+  } catch {
+    return {};
+  }
+}
+
+async function loadCoinGeckoPrices(fetchImpl) {
   try {
     const ids = getCoinIds().join(',');
     const url = `${PRICE_API_URL}?ids=${ids}&vs_currencies=${PRICE_CURRENCY}`;
@@ -54,6 +81,15 @@ async function loadMarketPrices(fetchImpl) {
   } catch {
     return {};
   }
+}
+
+// Loads the USDT rate AND all tracked crypto prices in MYR, so on-chain transfers and Pionex trades can be valued.
+// CoinGecko comes first; anything it did not give is filled from Luno.
+async function loadMarketPrices(fetchImpl) {
+  const prices = await loadCoinGeckoPrices(fetchImpl);
+  const needsFallback = !prices[RATE_KEYS.USDT] || getCoinIds().some((coinId) => coinId !== USDT_COIN_ID && !prices[coinId]);
+  if (!needsFallback) return prices;
+  return { ...(await loadLunoPrices(fetchImpl)), ...prices };
 }
 
 // Sets the cash accounts to the broker's balance. Returns { positions, records, notes }.
