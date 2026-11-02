@@ -1,7 +1,10 @@
 name: Pionex sync
 on:
   schedule:
-    - cron: '5 * * * *' # Once an hour. GitHub may start it a few minutes late.
+    # GitHub runs schedules on a best-effort basis and often starts them late or skips some. A run every 15 minutes
+    # (not on the busy :00 mark) means a late or skipped run still leaves Pionex read within the hour.
+    # Runs never overlap (see concurrency).
+    - cron: '3,18,33,48 * * * *'
   workflow_dispatch: {}
 permissions:
   contents: read
