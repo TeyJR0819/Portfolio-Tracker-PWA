@@ -50,36 +50,55 @@ async function describeRateLimit(response) {
 
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-// Retry up to 2 times on 429 with short backoff within Cloudflare Worker time limits.
-const BALANCE_MAX_ATTEMPTS = 2;
-const BALANCE_RETRY_MS = 1500;
+// A 429 can come from the shared address of the Cloudflare Worker, not only from this account, and Pionex bans the
+// address or account for 60 seconds. A fast retry only extends the ban, so the one retry waits for the ban to end.
+// A Worker run may wait: waiting uses no CPU time.
+const RETRY_AFTER_CAP_MS = 65000;
+const DEFAULT_BAN_WAIT_MS = 61000;
+const MAX_ATTEMPTS = 2;
+
+function banWaitMs(response) {
+  const seconds = Number(response.headers.get('retry-after'));
+  const asked = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 + 1000 : DEFAULT_BAN_WAIT_MS;
+  return Math.min(asked, RETRY_AFTER_CAP_MS);
+}
+
+// Pionex says which permission is missing only by a code or a 401/403. Name the setting the user must change.
+const PERMISSION_HINT = 'Open the key in Pionex API Management and turn on "Enable reading" (no trading, transfer or withdrawal), and leave the IP allowlist empty.';
+function isPermissionProblem(status, body) {
+  const code = String(body?.code ?? '').toUpperCase();
+  return status === 401 || status === 403 || /PERMISSION|FORBIDDEN|SIGNATURE|API_KEY|APIKEY|UNAUTHORI|IP/.test(code);
+}
+
+// One signed GET with at most one retry after a 429. Returns { response, limited, detail }.
+async function signedGetWithRetry(request, wait) {
+  let detail = '';
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const response = await signedGet(request);
+    if (response.status !== 429) return { response, limited: false, detail };
+    detail = await describeRateLimit(response);
+    if (attempt < MAX_ATTEMPTS) await wait(banWaitMs(response));
+  }
+  return { response: null, limited: true, detail };
+}
 
 export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, wait = defaultWait }) {
-  let lastDetail = '';
-  for (let attempt = 0; attempt < BALANCE_MAX_ATTEMPTS; attempt += 1) {
-    if (attempt > 0) {
-      await wait(BALANCE_RETRY_MS);
-    }
-    const response = await signedGet({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now });
-    if (response.status === 429) {
-      lastDetail = await describeRateLimit(response);
-      continue;
-    }
-    if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
+  const { response, limited, detail } = await signedGetWithRetry({ path: BALANCE_PATH, params: {}, apiKey, apiSecret, fetchImpl, now }, wait);
+  if (limited) throw new Error(`Pionex rate limit reached (${detail}). It will be tried again in the next run.`);
 
-    const body = await response.json();
-    if (body.result === false) throw new Error(`Pionex refused the request (${body.code ?? 'no code'}).`);
+  const body = await response.json().catch(() => ({}));
+  if (isPermissionProblem(response.status, body)) throw new Error(`Pionex refused the key (${body.code ?? response.status}). ${PERMISSION_HINT}`);
+  if (!response.ok) throw new Error(`Pionex answered with status ${response.status}.`);
+  if (body.result === false) throw new Error(`Pionex refused the request (${body.code ?? 'no code'}).`);
 
-    const totals = new Map();
-    for (const entry of body.data?.balances ?? []) {
-      const asset = ASSET_NAMES[entry.coin] ?? entry.coin;
-      const qty = Number(entry.free) + Number(entry.frozen);
-      if (!Number.isFinite(qty)) continue;
-      totals.set(asset, (totals.get(asset) ?? 0) + qty);
-    }
-    return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
+  const totals = new Map();
+  for (const entry of body.data?.balances ?? []) {
+    const asset = ASSET_NAMES[entry.coin] ?? entry.coin;
+    const qty = Number(entry.free) + Number(entry.frozen);
+    if (!Number.isFinite(qty)) continue;
+    totals.set(asset, (totals.get(asset) ?? 0) + qty);
   }
-  throw new Error(`Pionex rate limit reached (${lastDetail}). It will be tried again in the next run.`);
+  return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
 }
 
 // Reads the latest fills of every tracked coin against USDT.
@@ -102,14 +121,15 @@ export async function fetchPionexTrades({ apiKey, apiSecret, fetchImpl = fetch, 
       if (!unlimited && page >= pages) break;
       await wait(REQUEST_SPACING_MS);
       const params = { symbol, ...(endTime ? { endTime } : {}) };
-      const response = await signedGet({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now });
-      if (response.status === 429) {
+      const { response, limited, detail } = await signedGetWithRetry({ path: FILLS_PATH, params, apiKey, apiSecret, fetchImpl, now }, wait);
+      if (limited) {
         rows.isLimited = true;
-        rows.limitDetail = await describeRateLimit(response);
+        rows.limitDetail = detail;
         return rows;
       }
       const body = await response.json().catch(() => ({}));
       if (body.code === 'TRADE_INVALID_SYMBOL') break; // Pionex has no such market.
+      if (isPermissionProblem(response.status, body)) throw new Error(`Pionex refused the key for trades (${body.code ?? response.status}). ${PERMISSION_HINT}`);
       if (!response.ok) throw new Error(`Pionex answered with status ${response.status} for trades.`);
       if (body.result === false) throw new Error(`Pionex refused the trade request (${body.code ?? 'no code'}).`);
 
