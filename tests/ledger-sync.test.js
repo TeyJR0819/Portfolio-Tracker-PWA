@@ -369,3 +369,18 @@ test('ledger sync: when CoinGecko refuses, the USDT rate comes from Luno and the
   assert.doesNotMatch(outcome.message, /rate is not available/);
   assert.equal(find(fake.data, 'Pionex', 'BTC').cost_myr, 400, 'USDT 100 at RM 4.00 (300000 / 75000)');
 });
+
+test('ledger sync: a cash balance that differs by less than half a cent writes no line', async () => {
+  const tables = baseTables();
+  tables.broker_balances = [{ broker: 'Luno', asset: 'Luno Cash', qty: 250.5 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 40.004 }];
+  tables.broker_trades = [];
+  tables.portfolio = [
+    { id: 1, category: 'Cash', broker: 'Luno', asset: 'Luno Cash', qty: 250.5, cost_myr: 250.5, realised_pl: 0 },
+    { id: 2, category: 'Cash', broker: 'Pionex', asset: 'Pionex Cash', qty: 40, cost_myr: 164, realised_pl: 0 },
+  ];
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.equal(fake.data.transactions.filter((row) => row.note === 'Synced from Pionex').length, 0);
+  assert.equal(find(fake.data, 'Pionex', 'Pionex Cash').qty, 40);
+});

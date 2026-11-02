@@ -31,6 +31,9 @@ const TRANSACTION_BATCH_SIZE = 200;
 const STAKING_REWARD_NOTE = 'Staking reward (Luno), cost RM 0.00';
 const RATE_TIMEOUT_MS = 8000;
 const RECONCILE_TOLERANCE = 1e-6;
+// A cash balance that moves by less than half a cent is not worth a ledger line. Without this limit, a balance that
+// changes in the 6th decimal (for example Pionex interest or an order in progress) wrote a "0.00" line every run.
+const CASH_TOLERANCE = 0.005;
 const keyOf = (position) => `${position.broker}|${position.asset}`;
 
 const LUNO_TICKERS_URL = 'https://api.luno.com/api/1/tickers';
@@ -101,6 +104,8 @@ function planCashAlignment({ positions, balances, syncedBrokers, marketPrices, t
   for (const { broker, asset } of CASH_ACCOUNTS) {
     if (!syncedBrokers.has(broker)) continue;
     const reported = balances.find((row) => row.broker === broker && row.asset === asset)?.qty ?? 0;
+    const held = current.find((position) => position.broker === broker && position.asset === asset)?.qty ?? 0;
+    if (Math.abs(reported - held) < CASH_TOLERANCE && !(reported === 0 && held !== 0)) continue;
     try {
       const plan = planEntry({ kind: 'adjust', account: asset, balance: reported, tradeDate, note: `Synced from ${broker}` }, { positions: current, marketPrices });
       current = applyChanges(current, plan.changes);
