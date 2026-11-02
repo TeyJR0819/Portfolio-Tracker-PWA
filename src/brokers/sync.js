@@ -37,8 +37,10 @@ function isIbkrDue(env, now) {
   return now.getUTCHours() % IBKR_EVERY_HOURS === 0 && isFirstRunOfHour(now);
 }
 // Pionex limits requests per account and per address. Once an hour keeps the Worker well below both.
-function isPionexDue(env, now) {
-  return env.SYNC_ALWAYS === 'true' || isFirstRunOfHour(now);
+// A failed read (for example a 429 from the address the Worker shares with others) is tried again in the next
+// 15-minute run, so one blocked minute never leaves Pionex unread for a whole hour.
+function isPionexDue(env, now, failedBrokers = new Set()) {
+  return env.SYNC_ALWAYS === 'true' || isFirstRunOfHour(now) || failedBrokers.has('Pionex');
 }
 
 const BROKERS = Object.freeze([
@@ -139,7 +141,14 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
 
   const runTime = now();
   if (!BROKERS.some((candidate) => candidate.isConfigured(env))) return [{ broker: 'all', ok: false, message: 'No broker secrets are set.' }];
-  const due = BROKERS.filter((candidate) => candidate.isConfigured(env) && (candidate.isDue?.(env, runTime) ?? true));
+  let failedBrokers = new Set();
+  try {
+    const statuses = await database.select(STATUS_TABLE, 'select=broker,ok');
+    failedBrokers = new Set(statuses.filter((status) => status.ok === false).map((status) => status.broker));
+  } catch {
+    // Without the status lines the normal schedule applies.
+  }
+  const due = BROKERS.filter((candidate) => candidate.isConfigured(env) && (candidate.isDue?.(env, runTime, failedBrokers) ?? true));
   for (const broker of due) {
     const syncedAt = now().toISOString();
     try {
