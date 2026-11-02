@@ -23,7 +23,11 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
   const fetchImpl = async (url, init = {}) => {
     const address = new URL(String(url));
     if (address.hostname === 'api.coingecko.com') {
-      return hooks.noRate ? new Response('{}', { status: 500 }) : Response.json({ tether: { myr: 4.1 } });
+      return hooks.noRate || hooks.noCoinGecko ? new Response('{}', { status: 500 }) : Response.json({ tether: { myr: 4.1 } });
+    }
+    if (address.hostname === 'api.luno.com') {
+      if (hooks.noRate || hooks.noLunoRate) return new Response('{}', { status: 500 });
+      return Response.json({ tickers: [{ pair: 'XBTMYR', last_trade: '300000' }, { pair: 'XBTUSDT', last_trade: '75000' }, { pair: 'ADAMYR', last_trade: '0.8' }] });
     }
     const table = address.pathname.split('/').pop();
     const method = init.method ?? 'GET';
@@ -353,4 +357,15 @@ test('ledger sync: coins sent to Pionex in the last two hours are not corrected 
   const fake = createFakeSupabase({ tables });
   await run(fake);
   assert.equal(find(fake.data, 'Pionex', 'ADA').qty, 100);
+});
+
+test('ledger sync: when CoinGecko refuses, the USDT rate comes from Luno and the Pionex trades go in', async () => {
+  const tables = baseTables();
+  tables.broker_trades = [trade('pionex:1', { broker: 'Pionex', qty: 0.001, cash_amount: 100, quote_currency: 'USDT', traded_at: new Date(T0).toISOString() })];
+  tables.broker_balances = [{ broker: 'Luno', asset: 'Luno Cash', qty: 0 }, { broker: 'Pionex', asset: 'BTC', qty: 0.001 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 0 }];
+  const fake = createFakeSupabase({ tables, hooks: { noCoinGecko: true } });
+  const outcome = await run(fake);
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.doesNotMatch(outcome.message, /rate is not available/);
+  assert.equal(find(fake.data, 'Pionex', 'BTC').cost_myr, 400, 'USDT 100 at RM 4.00 (300000 / 75000)');
 });
