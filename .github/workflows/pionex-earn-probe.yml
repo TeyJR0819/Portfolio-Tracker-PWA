@@ -1,0 +1,18 @@
+name: Pionex Earn probe
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node scripts/pionex-earn-probe.js
+        env:
+          PIONEX_API_KEY: ${{ secrets.PIONEX_API_KEY }}
+          PIONEX_API_SECRET: ${{ secrets.PIONEX_API_SECRET }}
