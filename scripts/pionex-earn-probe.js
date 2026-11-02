@@ -4,12 +4,15 @@
 import { sign } from '../src/brokers/pionex.js';
 
 const ORIGIN = 'https://api.pionex.com';
-const PATHS = ['/api/v1/earn/arbitrage/fetchUserBalances', '/api/v1/earn/dual/balances'];
+const PATHS = ['/api/v1/wallet/balancesFull', '/api/v1/earn/arbitrage/fetchUserBalances', '/api/v1/earn/dual/balances'];
 
 function shape(value, depth = 0) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return depth > 5 ? '[…]' : `[${value.length} items] ${value.length ? JSON.stringify(shape(value[0], depth + 1)) : ''}`;
   if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    // A long map (for example the price of every coin) is summarised, so the log stays short.
+    if (keys.length > 15) return `{${keys.length} keys, for example ${keys.slice(0, 3).join(', ')}} ${JSON.stringify(shape(value[keys[0]], depth + 1))}`;
     return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, depth > 5 ? '…' : shape(inner, depth + 1)]));
   }
   if (typeof value === 'number') return 'number';
