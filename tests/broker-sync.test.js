@@ -441,3 +441,19 @@ test('Pionex 429: the message says whether the address of the Worker or only the
   await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: make(429), wait: async () => {} }), /address of the Worker is limited/);
   await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: make(200), wait: async () => {} }), /only the account or key is limited/);
 });
+
+test('Pionex: the renamed coin GRAM is read as TON, for balances and for trades', async () => {
+  const balances = await fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => json({ result: true, data: { balances: [{ coin: 'GRAM', free: '2.5', frozen: '0' }] } }) });
+  assert.deepEqual(balances, [{ asset: 'TON', qty: 2.5 }]);
+
+  const symbols = [];
+  const fetchImpl = async (url) => {
+    const symbol = new URL(String(url)).searchParams.get('symbol');
+    symbols.push(symbol);
+    if (symbol === 'GRAM_USDT') return json({ result: true, data: { fills: [{ id: 9, side: 'BUY', price: '10', size: '2', fee: '0', feeCoin: 'USDT', timestamp: 1761800000000 }] } });
+    return json({ result: false, code: 'TRADE_INVALID_SYMBOL' }, 400);
+  };
+  const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait: async () => {} });
+  assert.ok(symbols.includes('GRAM_USDT') && symbols.includes('TON_USDT'));
+  assert.deepEqual(rows.map((r) => [r.external_id, r.asset, r.qty]), [['pionex:9', 'TON', 2]]);
+});
