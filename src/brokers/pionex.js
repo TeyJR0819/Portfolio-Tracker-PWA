@@ -45,7 +45,8 @@ const REQUEST_SPACING_MS = 1000;
 async function describeRateLimit(response) {
   const body = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 100);
   const retryAfter = response.headers.get('retry-after');
-  return `429${retryAfter ? `, retry after ${retryAfter}s` : ''}${body ? `, reply: ${body}` : ', no reply text'}`;
+  const server = response.headers.get('server');
+  return `429${retryAfter ? `, retry after ${retryAfter}s` : ''}${server ? `, from ${server}` : ''}${body ? `, reply: ${body}` : ', no reply text'}`;
 }
 
 const defaultWait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -70,6 +71,17 @@ function isPermissionProblem(status, body) {
   return status === 401 || status === 403 || /PERMISSION|FORBIDDEN|SIGNATURE|API_KEY|APIKEY|UNAUTHORI|IP/.test(code);
 }
 
+// After a 429 that survived the retry, one unsigned request to a public endpoint tells whether the whole address is
+// blocked (the public endpoint answers 429 too) or only the account is (the public endpoint answers normally).
+async function probePublicEndpoint(fetchImpl) {
+  try {
+    const response = await fetchImpl(`${PIONEX_ORIGIN}/api/v1/common/symbols?symbols=BTC_USDT`, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    return response.status === 429 ? 'a public request is blocked too, so the address of the Worker is limited' : `a public request answers ${response.status}, so only the account or key is limited`;
+  } catch {
+    return 'the public check could not be made';
+  }
+}
+
 // One signed GET with at most one retry after a 429. Returns { response, limited, detail }.
 async function signedGetWithRetry(request, wait) {
   let detail = '';
@@ -79,7 +91,7 @@ async function signedGetWithRetry(request, wait) {
     detail = await describeRateLimit(response);
     if (attempt < MAX_ATTEMPTS) await wait(banWaitMs(response));
   }
-  return { response: null, limited: true, detail };
+  return { response: null, limited: true, detail: `${detail}; ${await probePublicEndpoint(request.fetchImpl)}` };
 }
 
 export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, wait = defaultWait }) {

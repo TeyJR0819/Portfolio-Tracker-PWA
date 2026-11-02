@@ -160,7 +160,7 @@ export async function runBrokerSync(env, { fetchImpl = fetch, now = () => new Da
       await database.upsert(STATUS_TABLE, [{ broker: broker.name, ok: true, message: tradeNote, synced_at: syncedAt }], 'broker');
       outcomes.push({ broker: broker.name, ok: true, message: tradeNote });
     } catch (error) {
-      const message = String(error.message ?? 'Unknown error.').slice(0, 200);
+      const message = String(error.message ?? 'Unknown error.').slice(0, 300);
       outcomes.push({ broker: broker.name, ok: false, message });
       try {
         await database.upsert(STATUS_TABLE, [{ broker: broker.name, ok: false, message, synced_at: syncedAt }], 'broker');
