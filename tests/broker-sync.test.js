@@ -322,7 +322,7 @@ test('Pionex trades: requests are spaced, and a 429 is retried once after the ba
   const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait: async (ms) => waits.push(ms) });
   assert.equal(rows.isLimited, true);
   assert.deepEqual(rows.map((r) => r.external_id), ['pionex:1'], 'what was read before the limit is kept');
-  assert.equal(urls.length, 3, 'one retry of the 429, and no request after it');
+  assert.equal(urls.length, 4, 'one retry of the 429, then one public check, and nothing after it');
   assert.deepEqual(waits, [1000, 1000, 61000], 'a pause before every request and a wait for the ban before the retry');
 });
 
@@ -434,4 +434,10 @@ test('sync: a failed Pionex read is tried again in the next 15-minute run, not a
   const late = () => new Date('2026-11-02T02:20:00Z'); // not the first run of the hour
   assert.equal((await runBrokerSync(env, { fetchImpl: make([{ broker: 'Pionex', ok: true }]), now: late, wait: async () => {} })).length, 0);
   assert.equal((await runBrokerSync(env, { fetchImpl: make([{ broker: 'Pionex', ok: false }]), now: late, wait: async () => {} }))[0].broker, 'Pionex');
+});
+
+test('Pionex 429: the message says whether the address of the Worker or only the account is limited', async () => {
+  const make = (publicStatus) => async (url) => (String(url).includes('/common/symbols') ? new Response('{}', { status: publicStatus }) : new Response('Too Many Requests', { status: 429 }));
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: make(429), wait: async () => {} }), /address of the Worker is limited/);
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: make(200), wait: async () => {} }), /only the account or key is limited/);
 });
