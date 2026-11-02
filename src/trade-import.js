@@ -320,7 +320,9 @@ export function planBalanceAlignment({ positions, balances, broker, assets, mark
       tradeDate, kind: 'adjust', broker, asset, qty: change, price: unitCost, currency: 'MYR', fee: 0, rate: 1,
       totalMyr: roundTo(Math.abs(change) * unitCost, MONEY_DECIMALS),
       fromAccount: '', toAccount: `${broker} ${asset}`, amountFrom: 0, amountTo: reported, realisedPl: 0,
-      note: `Balance corrected to the ${broker} balance (${change > 0 ? '+' : ''}${change} ${asset} not explained by the history)`,
+      note: broker === 'Pionex'
+        ? `Pionex balance applied (${change > 0 ? '+' : ''}${change} ${asset}); coins in a bot are not counted`
+        : `Balance corrected to the ${broker} balance (${change > 0 ? '+' : ''}${change} ${asset} not explained by the history)`,
       externalId: '',
     });
     notes.push(`${asset} ${change > 0 ? '+' : ''}${change}`);

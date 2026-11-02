@@ -211,7 +211,7 @@ How to read the result:
 
 IBKR reports the last business day, so a trade made today shows as **Differs** until the next report. To read IBKR on every run while testing, add a plain (not secret) variable `SYNC_ALWAYS` with the value `true`, then delete it afterwards.
 
-The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot and earn balances are not read, which matches the app's rules.
+The comparison covers quantities only. Prices, costs and profit still come from the ledger. Pionex bot and earn balances are not read, which matches the app's rules. The Pionex coins in the portfolio are set to the trading-account balance after every run, so coins inside a bot are never counted. Coins just sent from Luno are left alone for two hours, until the hourly Pionex read shows them.
 
 If a broker shows `status 401` or `403`, the key or its permission is wrong. Create it again and update the secret.
 
@@ -251,7 +251,7 @@ Limits you should know:
 - If you add an entry by hand at the same moment a sync runs, the later save can overwrite the earlier one. Refresh before you add an entry.
 - The Worker is limited in how many outside requests one run may make. The sync therefore saves each changed balance once and all history lines in one request, so a large first import fits in one run.
 
-**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker reads Pionex once an hour, pauses 0.7 seconds before each request, and identifies itself with a User-Agent. If Pionex answers 429, the Worker waits about 61 seconds (the length of Pionex's ban) and tries that request once more, because a faster retry only extends the ban. The 429 can also come from the address that the Cloudflare Worker shares with other users, so it may not be caused by your account. If the second try fails too, the Worker stops and tries again in the next hourly run. The Broker check line then shows what Pionex replied, for example the retry time. To test Pionex outside the hourly run, add the plain Cloudflare variable `SYNC_ALWAYS` with the value `true` (it also makes IBKR run every time), then delete it afterwards.
+**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker reads Pionex once an hour, pauses 1 second before each request, and identifies itself with a User-Agent. If Pionex answers 429, the Worker waits about 61 seconds (the length of Pionex's ban) and tries that request once more, because a faster retry only extends the ban. The 429 can also come from the address that the Cloudflare Worker shares with other users, so it may not be caused by your account. If the second try fails too, the Worker stops and tries again in the next 15-minute run (a failed Pionex read does not wait for the next hour). The Broker check line then shows what Pionex replied, for example the retry time. To test Pionex outside the hourly run, add the plain Cloudflare variable `SYNC_ALWAYS` with the value `true` (it also makes IBKR run every time), then delete it afterwards.
 
 ## Entries
 

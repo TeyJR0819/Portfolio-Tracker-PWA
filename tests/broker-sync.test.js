@@ -77,9 +77,9 @@ test('sync: writes balances and status, uses the service key, removes stale rows
   const database = calls.filter((call) => call.url.includes('supabase.co'));
   assert.ok(database.every((call) => call.init.headers.apikey === 'sb_secret_abc'));
   assert.ok(database.every((call) => !call.init.headers.Authorization), 'new-style keys go in apikey only');
-  assert.ok(database.some((call) => call.url.includes('broker_balances?on_conflict=broker,asset') && call.init.body.includes('"asset":"BTC"')));
+  assert.ok(database.some((call) => call.url.includes('broker_balances?on_conflict=broker,asset') && call.init.body?.includes('"asset":"BTC"')));
   assert.ok(database.some((call) => call.init.method === 'DELETE' && call.url.includes('broker=eq.Luno&synced_at=lt.')));
-  assert.ok(database.some((call) => call.url.includes('broker_sync_status') && call.init.body.includes('"ok":true')));
+  assert.ok(database.some((call) => call.url.includes('broker_sync_status') && call.init.body?.includes('"ok":true')));
 });
 
 test('sync: one failing broker is recorded and does not stop the other', async () => {
@@ -87,7 +87,7 @@ test('sync: one failing broker is recorded and does not stop the other', async (
   const outcomes = await runBrokerSync(baseEnv, { fetchImpl });
   assert.equal(outcomes[0].ok, false);
   assert.equal(outcomes[1].ok, true);
-  const failure = calls.find((call) => call.url.includes('broker_sync_status') && call.init.body.includes('"ok":false'));
+  const failure = calls.find((call) => call.url.includes('broker_sync_status') && call.init.body?.includes('"ok":false'));
   assert.ok(failure);
   assert.ok(!failure.init.body.includes('"b"'));
 });
@@ -300,14 +300,14 @@ test('sync: trades are saved, a trade failure is noted but the balances still co
   const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', LUNO_KEY_ID: 'a', LUNO_KEY_SECRET: 'b' };
 
   await runBrokerSync(env, { fetchImpl });
-  assert.ok(calls.some((call) => call.url.includes('broker_trades?on_conflict=external_id') && call.init.body.includes('luno:XBTMYR:1')));
+  assert.ok(calls.some((call) => call.url.includes('broker_trades?on_conflict=external_id') && call.init.body?.includes('luno:XBTMYR:1')));
 
   calls.length = 0;
   tradesFail = true;
   const outcomes = await runBrokerSync(env, { fetchImpl });
   assert.equal(outcomes[0].ok, true);
   assert.match(outcomes[0].message, /Trades: Luno answered with status 500/);
-  assert.ok(calls.some((call) => call.url.includes('broker_sync_status') && call.init.body.includes('"ok":true') && call.init.body.includes('Trades:')));
+  assert.ok(calls.some((call) => call.url.includes('broker_sync_status') && call.init.body?.includes('"ok":true') && call.init.body?.includes('Trades:')));
 });
 
 
@@ -323,7 +323,7 @@ test('Pionex trades: requests are spaced, and a 429 is retried once after the ba
   assert.equal(rows.isLimited, true);
   assert.deepEqual(rows.map((r) => r.external_id), ['pionex:1'], 'what was read before the limit is kept');
   assert.equal(urls.length, 3, 'one retry of the 429, and no request after it');
-  assert.deepEqual(waits, [700, 700, 61000], 'a pause before every request and a wait for the ban before the retry');
+  assert.deepEqual(waits, [1000, 1000, 61000], 'a pause before every request and a wait for the ban before the retry');
 });
 
 test('Pionex balances: a 429 gives a clear message', async () => {
@@ -421,4 +421,17 @@ test('Pionex balances: a permission problem names the setting to turn on', async
     fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => json({ result: false, code: 'PERMISSION_DENIED' }) }),
     /Enable reading/,
   );
+});
+
+test('sync: a failed Pionex read is tried again in the next 15-minute run, not after an hour', async () => {
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
+  const make = (statusRows) => async (url) => {
+    const text = String(url);
+    if (text.startsWith('https://api.pionex.com')) return json({ result: true, data: { balances: [] } });
+    if (text.includes('broker_sync_status') && text.includes('select=')) return json(statusRows);
+    return new Response(null, { status: 204 });
+  };
+  const late = () => new Date('2026-11-02T02:20:00Z'); // not the first run of the hour
+  assert.equal((await runBrokerSync(env, { fetchImpl: make([{ broker: 'Pionex', ok: true }]), now: late, wait: async () => {} })).length, 0);
+  assert.equal((await runBrokerSync(env, { fetchImpl: make([{ broker: 'Pionex', ok: false }]), now: late, wait: async () => {} }))[0].broker, 'Pionex');
 });
