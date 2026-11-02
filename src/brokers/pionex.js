@@ -39,7 +39,7 @@ async function signedGet({ path, params, apiKey, apiSecret, fetchImpl, now }) {
 
 // Pionex allows 10 request weight per second per account, and a fills request weighs 5. Requests are
 // spaced so the limit is never reached.
-const REQUEST_SPACING_MS = 700;
+const REQUEST_SPACING_MS = 1000;
 
 // What Pionex said with a 429, in a short form for the status line (never contains a key).
 async function describeRateLimit(response) {

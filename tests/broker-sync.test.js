@@ -323,7 +323,7 @@ test('Pionex trades: requests are spaced, and a 429 is retried once after the ba
   assert.equal(rows.isLimited, true);
   assert.deepEqual(rows.map((r) => r.external_id), ['pionex:1'], 'what was read before the limit is kept');
   assert.equal(urls.length, 3, 'one retry of the 429, and no request after it');
-  assert.deepEqual(waits, [700, 700, 61000], 'a pause before every request and a wait for the ban before the retry');
+  assert.deepEqual(waits, [1000, 1000, 61000], 'a pause before every request and a wait for the ban before the retry');
 });
 
 test('Pionex balances: a 429 gives a clear message', async () => {

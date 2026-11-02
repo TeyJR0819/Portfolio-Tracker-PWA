@@ -86,6 +86,16 @@ function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKe
   return planBalanceAlignment({ positions, balances, broker: 'Luno', assets, marketPrices, tradeDate });
 }
 
+// Sets every Pionex coin to the quantity the Pionex trading account reports. That balance leaves out bot and earn
+// money, so coins that sit in a bot never count in the portfolio. A coin just sent from Luno is skipped for a short
+// time, because the hourly Pionex read may not show it yet.
+const RECENT_SEND_MS = 2 * 60 * 60 * 1000;
+function planPionexCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, recentSendAssets, marketPrices, tradeDate }) {
+  if (!syncedBrokers.has('Pionex')) return { positions, records: [], notes: [] };
+  const assets = TRADED_ASSETS.filter((asset) => !blockedKeys?.has(`Pionex|${asset}`) && !recentSendAssets.has(asset));
+  return planBalanceAlignment({ positions, balances, broker: 'Pionex', assets, marketPrices, tradeDate });
+}
+
 // Detects if any previously imported Luno transaction in `transactions` is stale or was misclassified
 // (for example, an internal staking move `luno:transfer:*` / `luno:inflow:*` that is no longer in `broker_trades`,
 // or an `Opening balance` row created because of a misclassified staking transfer, or an Instant Buy whose
@@ -205,12 +215,13 @@ async function undoTransactions(database, ids) {
   if (ids.length > 0) await database.remove('transactions', `id=in.(${ids.join(',')})`);
 }
 
-function describeResult({ tradeCount, openingCount, cashChanges, notes, corrections = [], stopMessage }) {
+function describeResult({ tradeCount, openingCount, cashChanges, notes, corrections = [], pionexCorrections = [], stopMessage }) {
   const parts = [];
   if (tradeCount > 0) parts.push(`${tradeCount} ${tradeCount === 1 ? 'trade' : 'trades'} recorded`);
   if (openingCount > 0) parts.push(`${openingCount} ${openingCount === 1 ? 'sale' : 'sales'} had no earlier purchase in the history, so those coins were counted at the sale price (no profit or loss)`);
   if (cashChanges > 0) parts.push(`${cashChanges} cash ${cashChanges === 1 ? 'balance' : 'balances'} synced`);
   if (corrections.length > 0) parts.push(`Luno balance corrected (not explained by the history): ${corrections.join(', ')}`);
+  if (pionexCorrections.length > 0) parts.push(`Pionex balance set to the trading account (bots not counted): ${pionexCorrections.join(', ')}`);
   if (stopMessage) parts.push(stopMessage);
   parts.push(...notes);
   return parts.join('. ').slice(0, 300);
@@ -283,16 +294,29 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
       tradeDate,
     });
 
+    // 2b. Align Pionex crypto with the Pionex trading-account balance (bot and earn money is not in it)
+    const sendSides = new Set(['send', 'transfer_to_pionex']);
+    const recentSendAssets = new Set(trades.filter((t) => sendSides.has(t.side) && now().getTime() - t.tradedAt < RECENT_SEND_MS).map((t) => t.asset));
+    const pionexAligned = planPionexCryptoAlignment({
+      positions: lunoAligned.positions,
+      balances: parsedBalances,
+      syncedBrokers,
+      blockedKeys: tradePlan.blockedKeys,
+      recentSendAssets,
+      marketPrices,
+      tradeDate,
+    });
+
     // 3. Align cash accounts
     const cashPlan = planCashAlignment({
-      positions: lunoAligned.positions,
+      positions: pionexAligned.positions,
       balances: parsedBalances,
       syncedBrokers,
       marketPrices,
       tradeDate,
     });
 
-    const records = [...tradePlan.records, ...lunoAligned.records, ...cashPlan.records];
+    const records = [...tradePlan.records, ...lunoAligned.records, ...pionexAligned.records, ...cashPlan.records];
     const hasPositionChanges = cashPlan.positions.some((position) => {
       const before = originals.get(keyOf(position));
       return !before || before.qty !== position.qty || before.costMyr !== position.costMyr || before.realisedPl !== position.realisedPl;
@@ -311,6 +335,7 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
           message: describeResult({
             tradeCount: tradePlan.importedIds.length,
             corrections: lunoAligned.notes,
+            pionexCorrections: pionexAligned.notes,
             openingCount: tradePlan.openingCount,
             cashChanges: cashPlan.records.length,
             notes: cashPlan.notes,

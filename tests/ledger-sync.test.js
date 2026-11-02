@@ -85,7 +85,7 @@ function createFakeSupabase({ tables = {}, hooks = {} } = {}) {
 
 const baseTables = () => ({
   broker_sync_status: [{ broker: 'Luno', ok: true }, { broker: 'Pionex', ok: true }],
-  broker_balances: [{ broker: 'Luno', asset: 'Luno Cash', qty: 250.5 }, { broker: 'Luno', asset: 'BTC', qty: 0.01 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 40 }],
+  broker_balances: [{ broker: 'Luno', asset: 'Luno Cash', qty: 250.5 }, { broker: 'Luno', asset: 'BTC', qty: 0.01 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 40 }, { broker: 'Pionex', asset: 'BTC', qty: 0.001 }],
   broker_trades: [
     trade('luno:XBTMYR:1', { qty: 0.02, cash_amount: 6009, fee_quote: 9, traded_at: new Date(T0).toISOString() }),
     trade('luno:XBTMYR:2', { side: 'sell', qty: 0.01, cash_amount: 3500, fee_quote: 5, traded_at: new Date(T0 + DAY).toISOString() }),
@@ -307,7 +307,7 @@ test('ledger sync: trades saved with the wrong side by an older version are rebu
 
 test('ledger sync: a send saved as “Outside” by the previous version is rebuilt so Pionex receives the coins and their cost', async () => {
   const tables = baseTables();
-  tables.broker_balances.push({ broker: 'Luno', asset: 'ADA', qty: 60 });
+  tables.broker_balances.push({ broker: 'Luno', asset: 'ADA', qty: 60 }, { broker: 'Pionex', asset: 'ADA', qty: 40 });
   tables.broker_trades.push(
     trade('luno:inflow:a1:1', { asset: 'ADA', qty: 100, cash_amount: 200, traded_at: new Date(T0).toISOString() }),
     trade('luno:transfer:a1:2', { asset: 'ADA', side: 'transfer_to_pionex', qty: 40, cash_amount: 0, traded_at: new Date(T0 + DAY).toISOString() }),
@@ -325,4 +325,32 @@ test('ledger sync: a send saved as “Outside” by the previous version is rebu
   assert.equal(find(fake.data, 'Luno', 'ADA').qty, 60);
   assert.equal(find(fake.data, 'Luno', 'ADA').cost_myr, 120);
   assert.equal(find(fake.data, 'Luno', 'ADA').realised_pl, 0);
+});
+
+test('ledger sync: Pionex coins are set to the trading-account balance, so bot coins are not counted', async () => {
+  const tables = baseTables();
+  tables.broker_trades = [
+    trade('luno:inflow:a1:1', { asset: 'ADA', qty: 100, cash_amount: 200, traded_at: new Date(T0).toISOString() }),
+    trade('luno:transfer:a1:2', { asset: 'ADA', side: 'transfer_to_pionex', qty: 100, cash_amount: 0, traded_at: new Date(T0 + DAY).toISOString() }),
+  ];
+  tables.broker_balances = [{ broker: 'Luno', asset: 'Luno Cash', qty: 0 }, { broker: 'Pionex', asset: 'ADA', qty: 30 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 0 }];
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.equal(find(fake.data, 'Pionex', 'ADA').qty, 30, '70 coins sit in a bot and are not counted');
+  assert.equal(find(fake.data, 'Pionex', 'ADA').cost_myr, 60, 'the carried cost of the remaining coins');
+  assert.ok(fake.data.transactions.some((row) => String(row.note).startsWith('Pionex balance applied')));
+});
+
+test('ledger sync: coins sent to Pionex in the last two hours are not corrected before Pionex shows them', async () => {
+  const tables = baseTables();
+  tables.broker_trades = [
+    trade('luno:inflow:a1:1', { asset: 'ADA', qty: 100, cash_amount: 200, traded_at: new Date('2026-10-29T00:00:00Z').toISOString() }),
+    trade('luno:transfer:a1:2', { asset: 'ADA', side: 'transfer_to_pionex', qty: 100, cash_amount: 0, traded_at: new Date('2026-10-30T05:30:00Z').toISOString() }),
+  ];
+  tables.broker_balances = [{ broker: 'Luno', asset: 'Luno Cash', qty: 0 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 0 }];
+  const fake = createFakeSupabase({ tables });
+  await run(fake);
+  assert.equal(find(fake.data, 'Pionex', 'ADA').qty, 100);
 });
