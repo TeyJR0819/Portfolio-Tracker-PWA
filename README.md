@@ -193,7 +193,7 @@ Do these steps in order.
 
 1. **Create the tables.** Open `sql/broker-sync.sql`, replace `PASTE-YOUR-USER-ID-HERE` with your User UID, and run it in the Supabase SQL Editor.
 2. **Create a Luno key.** In Luno, open **Settings > API Keys** and create a key with only **View balance** (`Perm_R_Balance`). Copy the key ID and the secret.
-3. **Create a Pionex key.** In Pionex, open **API Management** and create a key with **Read** permission only. Do not enable trading or withdrawal. Pionex offers an IP allowlist, but a Worker has no fixed address, so leave it empty and rely on the read-only permission.
+3. **Create a Pionex key.** In Pionex, open **API Management** and create a key and turn on **Enable reading** only (the balance and trade reads need it). Do not enable trading, transfer or withdrawal. Pionex offers an IP allowlist, but a Worker has no fixed address, so leave it empty and rely on the read-only permission.
 4. **Create the IBKR report and token.** IBKR has no live read-only key. It offers a saved report (a Flex Query) and a token that can only run that report.
    - In IBKR Client Portal, open **Performance & Reports > Flex Queries**. Create an **Activity Flex Query** with the sections **Open Positions** (tick **Summary** level, and fields Symbol, Quantity, Currency) and **Cash Report** (fields Currency, Ending Cash). Set the format to **XML** and save. Note the **Query ID**.
    - Open **Flex Queries > Flex Web Service Configuration**, enable the service, and generate a token. Choose the **longest expiry** offered, because the default is only 6 hours. Copy the token. Leave the IP restriction empty (a Worker has no fixed address).
@@ -251,7 +251,7 @@ Limits you should know:
 - If you add an entry by hand at the same moment a sync runs, the later save can overwrite the earlier one. Refresh before you add an entry.
 - The Worker is limited in how many outside requests one run may make. The sync therefore saves each changed balance once and all history lines in one request, so a large first import fits in one run.
 
-**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker reads Pionex once an hour, pauses 0.7 seconds before each request, and identifies itself with a User-Agent. If Pionex still answers 429, the Worker stops at once (a retry would extend Pionex's 60-second ban) and tries again in the next hourly run. The Broker check line then shows what Pionex replied, for example the retry time. To test Pionex outside the hourly run, add the plain Cloudflare variable `SYNC_ALWAYS` with the value `true` (it also makes IBKR run every time), then delete it afterwards.
+**Pionex rate limit.** Pionex allows 10 weight per second per account, and a trade request weighs 5. The Worker reads Pionex once an hour, pauses 0.7 seconds before each request, and identifies itself with a User-Agent. If Pionex answers 429, the Worker waits about 61 seconds (the length of Pionex's ban) and tries that request once more, because a faster retry only extends the ban. The 429 can also come from the address that the Cloudflare Worker shares with other users, so it may not be caused by your account. If the second try fails too, the Worker stops and tries again in the next hourly run. The Broker check line then shows what Pionex replied, for example the retry time. To test Pionex outside the hourly run, add the plain Cloudflare variable `SYNC_ALWAYS` with the value `true` (it also makes IBKR run every time), then delete it afterwards.
 
 ## Entries
 

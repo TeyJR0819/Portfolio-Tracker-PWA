@@ -311,7 +311,7 @@ test('sync: trades are saved, a trade failure is noted but the balances still co
 });
 
 
-test('Pionex trades: requests are spaced, and a 429 stops everything without a retry', async () => {
+test('Pionex trades: requests are spaced, and a 429 is retried once after the ban, then everything stops', async () => {
   const waits = [];
   const urls = [];
   const fetchImpl = async (url) => {
@@ -322,12 +322,12 @@ test('Pionex trades: requests are spaced, and a 429 stops everything without a r
   const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait: async (ms) => waits.push(ms) });
   assert.equal(rows.isLimited, true);
   assert.deepEqual(rows.map((r) => r.external_id), ['pionex:1'], 'what was read before the limit is kept');
-  assert.equal(urls.length, 2, 'no request after the 429, and no retry of it');
-  assert.deepEqual(waits, [700, 700], 'a pause before every request');
+  assert.equal(urls.length, 3, 'one retry of the 429, and no request after it');
+  assert.deepEqual(waits, [700, 700, 61000], 'a pause before every request and a wait for the ban before the retry');
 });
 
 test('Pionex balances: a 429 gives a clear message', async () => {
-  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => new Response('', { status: 429 }) }), /rate limit/);
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => new Response('', { status: 429 }), wait: async () => {} }), /rate limit/);
 });
 
 test('sync: a Pionex rate limit is noted, the partial trades are saved, and balances still count as read', async () => {
@@ -346,7 +346,7 @@ test('sync: a Pionex rate limit is noted, the partial trades are saved, and bala
 
 test('Pionex 429: the message carries what Pionex said, so the cause can be read', async () => {
   const fetchImpl = async () => new Response('{"message":"too many requests from this address"}', { status: 429, headers: { 'retry-after': '60' } });
-  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 'SECRET-VALUE', fetchImpl }), (error) => {
+  await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 'SECRET-VALUE', fetchImpl, wait: async () => {} }), (error) => {
     assert.match(error.message, /retry after 60s/);
     assert.match(error.message, /too many requests from this address/);
     assert.ok(!error.message.includes('SECRET-VALUE'));
@@ -405,4 +405,20 @@ test('Luno trades: the side is the type of the user\'s own order, not is_buy of 
   };
   const rows = await fetchLunoTrades({ keyId: 'a', keySecret: 'b', fetchImpl });
   assert.deepEqual(rows.map((r) => [r.side, r.qty, r.cash_amount]), [['buy', 9.99, 30], ['sell', 4, 11.96]], 'quantity is the filled amount (base), not the order volume');
+});
+
+test('Pionex balances: a 429 is retried once after the 60-second ban and then succeeds', async () => {
+  const waits = [];
+  let calls = 0;
+  const fetchImpl = async () => (++calls === 1 ? new Response('', { status: 429 }) : json({ result: true, data: { balances: [{ coin: 'USDT', free: '7', frozen: '0' }] } }));
+  const rows = await fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl, wait: async (ms) => waits.push(ms) });
+  assert.deepEqual(rows, [{ asset: 'Pionex Cash', qty: 7 }]);
+  assert.deepEqual(waits, [61000]);
+});
+
+test('Pionex balances: a permission problem names the setting to turn on', async () => {
+  await assert.rejects(
+    fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => json({ result: false, code: 'PERMISSION_DENIED' }) }),
+    /Enable reading/,
+  );
 });
