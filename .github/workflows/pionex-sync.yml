@@ -1,0 +1,25 @@
+name: Pionex sync
+on:
+  schedule:
+    - cron: '5 * * * *' # Once an hour. GitHub may start it a few minutes late.
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: pionex-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/pionex-sync.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PIONEX_API_KEY: ${{ secrets.PIONEX_API_KEY }}
+          PIONEX_API_SECRET: ${{ secrets.PIONEX_API_SECRET }}
