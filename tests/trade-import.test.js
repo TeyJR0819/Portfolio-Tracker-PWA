@@ -109,7 +109,7 @@ test('plan: a missing exchange rate is reported instead of guessing', () => {
   assert.deepEqual(result.importedIds, []);
 });
 
-test('plan: a send out of Luno keeps the average cost, books no profit or loss, and adds nothing to Pionex', () => {
+test('plan: a send out of Luno takes its cost to Pionex, leaves the Luno average cost unchanged and books no profit or loss', () => {
   const lunoAda = { id: 1, category: 'Crypto', broker: 'Luno', asset: 'ADA', qty: 2414.88934, costMyr: 4829.78, realisedPl: 0 };
   const transfer = trade('t1', { asset: 'ADA', side: 'transfer_to_pionex', qty: 1008.2163699, cashAmount: 0, quoteCurrency: 'MYR' });
   const result = planTradeImport({ trades: [transfer], positions: [lunoAda], marketPrices: { cardano: 2.0 } });
@@ -121,13 +121,34 @@ test('plan: a send out of Luno keeps the average cost, books no profit or loss, 
   assert.equal(newLuno.costMyr, Number((4829.78 - 2016.43).toFixed(2)));
   assert.ok(Math.abs(newLuno.costMyr / newLuno.qty - 2) < 1e-4, 'the average cost per coin is unchanged');
   assert.equal(newLuno.realisedPl, 0);
-  assert.ok(!result.positions.some((p) => p.broker === 'Pionex'), 'no Pionex holding is created from a Luno send');
+  const pionex = result.positions.find((p) => p.broker === 'Pionex' && p.asset === 'ADA');
+  assert.equal(pionex.qty, 1008.2163699);
+  assert.equal(pionex.costMyr, 2016.43, 'Pionex starts with the cost the coins had at Luno');
+  assert.equal(pionex.realisedPl, 0);
 
   const record = result.records[0];
   assert.equal(record.kind, 'transfer');
   assert.equal(record.realisedPl, 0);
   assert.equal(record.fromAccount, 'Luno ADA');
-  assert.equal(record.toAccount, 'Outside (sent from Luno)');
+  assert.equal(record.toAccount, 'Pionex ADA');
+});
+
+test('plan: RM 3000 buys 3000 ADA, 2998 are sent to Pionex, and the fee coins keep their cost in Luno', () => {
+  const trades = [
+    trade('b1', { asset: 'ADA', side: 'buy', qty: 3000, cashAmount: 3000, quoteCurrency: 'MYR', tradedAt: 1 }),
+    trade('s1', { asset: 'ADA', side: 'transfer_to_pionex', qty: 2998, cashAmount: 0, quoteCurrency: 'MYR', tradedAt: 2 }),
+    trade('f1', { asset: 'ADA', side: 'send_fee', qty: 0.5, cashAmount: 0, quoteCurrency: 'MYR', tradedAt: 2 }),
+  ];
+  const result = planTradeImport({ trades, positions: [], marketPrices: {} });
+  assert.equal(result.message, '');
+  const luno = result.positions.find((p) => p.broker === 'Luno' && p.asset === 'ADA');
+  const pionex = result.positions.find((p) => p.broker === 'Pionex' && p.asset === 'ADA');
+  assert.equal(pionex.qty, 2998);
+  assert.equal(pionex.costMyr, 2998);
+  assert.equal(luno.qty, 1.5, 'the fee coins left Luno');
+  assert.equal(luno.costMyr, 2, 'Luno keeps only the cost of what was not sent, including the fee coins');
+  assert.equal(luno.realisedPl, 0);
+  assert.equal(pionex.realisedPl, 0);
 });
 
 test('plan: an inflow with cashAmount 0 uses market price for cost basis', () => {
