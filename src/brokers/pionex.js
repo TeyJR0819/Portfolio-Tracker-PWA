@@ -10,6 +10,8 @@ import { TRADED_ASSETS, toTradeRow } from './trades.js';
 const PIONEX_ORIGIN = 'https://api.pionex.com';
 const BALANCE_PATH = '/api/v1/account/balances';
 const FILLS_PATH = '/api/v1/trade/fills';
+const EARN_ARBITRAGE_PATH = '/api/v1/earn/arbitrage/fetchUserBalances';
+const EARN_DUAL_PATH = '/api/v1/earn/dual/balances';
 const FILLS_PER_PAGE = 100; // Pionex returns at most the latest 100 fills per request.
 const REQUEST_TIMEOUT_MS = 10000;
 const USER_AGENT = 'portfolio-tracker-worker/1.0';
@@ -115,6 +117,38 @@ export async function fetchPionexBalances({ apiKey, apiSecret, fetchImpl = fetch
     totals.set(asset, (totals.get(asset) ?? 0) + qty);
   }
   return [...totals].filter(([, qty]) => qty !== 0).map(([asset, qty]) => ({ asset, qty }));
+}
+
+// Pionex Earn (flexible "arbitrage" products) holds coins outside the trading account, so the balance above leaves
+// them out. Reply seen from Pionex: data.data = [{ coin, amount, profit, claimedProfit, trialFundAmount, productId }].
+// Only `amount` (the money you put in) is counted. The profit is not added here, because Pionex does not say whether it
+// is already inside `amount`; it reaches the balance when it is claimed.
+// A failure here is thrown, never ignored: a balance without the Earn part would make the portfolio too small.
+export async function fetchPionexEarnBalances({ apiKey, apiSecret, fetchImpl = fetch, now = Date.now, wait = defaultWait }) {
+  const read = async (path) => {
+    const { response, limited, detail } = await signedGetWithRetry({ path, params: {}, apiKey, apiSecret, fetchImpl, now }, wait);
+    if (limited) throw new Error(`Pionex rate limit reached (${detail}). It will be tried again in the next run.`);
+    const body = await response.json().catch(() => ({}));
+    if (isPermissionProblem(response.status, body)) throw new Error(`Pionex refused the key for Earn (${body.code ?? response.status}). ${PERMISSION_HINT}`);
+    if (!response.ok || body.result === false) throw new Error(`Pionex could not give the Earn balance (${body.code ?? response.status}).`);
+    return body.data ?? {};
+  };
+
+  await wait(REQUEST_SPACING_MS);
+  const arbitrage = (await read(EARN_ARBITRAGE_PATH)).data ?? [];
+  await wait(REQUEST_SPACING_MS);
+  const dual = (await read(EARN_DUAL_PATH)).balances ?? [];
+  // The reply of Dual Investment balances has not been seen with content, so a balance there is refused, not guessed.
+  if (dual.length > 0) throw new Error('Pionex Dual Investment balances are not supported yet, so the balance was not saved.');
+
+  const totals = new Map();
+  for (const entry of arbitrage) {
+    const asset = ASSET_NAMES[entry.coin] ?? entry.coin;
+    const qty = Number(entry.amount);
+    if (!Number.isFinite(qty)) throw new Error('Pionex sent an Earn amount that could not be read.');
+    totals.set(asset, (totals.get(asset) ?? 0) + qty);
+  }
+  return [...totals].map(([asset, qty]) => ({ asset, qty }));
 }
 
 // Reads the latest fills of every tracked coin against USDT.

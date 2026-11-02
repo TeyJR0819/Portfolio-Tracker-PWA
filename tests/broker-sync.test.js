@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { fetchIbkrBalances, parseFlexReport } from '../src/brokers/ibkr.js';
 import { fetchLunoBalances, fetchLunoTrades } from '../src/brokers/luno.js';
-import { fetchPionexBalances, fetchPionexTrades, sign } from '../src/brokers/pionex.js';
+import { fetchPionexBalances, fetchPionexEarnBalances, fetchPionexTrades, sign } from '../src/brokers/pionex.js';
 import { runBrokerSync } from '../src/brokers/sync.js';
 import { toTradeRow } from '../src/brokers/trades.js';
 import { MATCH_STATES, reconcileBalances } from '../public/js/logic/reconcile.js';
@@ -57,12 +57,19 @@ test('Pionex: result false is an error', async () => {
   await assert.rejects(fetchPionexBalances({ apiKey: 'k', apiSecret: 's', fetchImpl: async () => json({ result: false, code: 'PERMISSION_DENIED' }) }), /PERMISSION_DENIED/);
 });
 
+// What Pionex answers for each endpoint: spot balances, the Earn arbitrage list, and the (empty) Dual Investment list.
+const pionexBody = (url) => {
+  if (String(url).includes('/earn/arbitrage/')) return { result: true, data: { data: [{ coin: 'USDT', amount: '3', profit: '0.1', claimedProfit: '0', trialFundAmount: '0', productId: '1' }] } };
+  if (String(url).includes('/earn/dual/')) return { result: true, data: { balances: [] } };
+  return { result: true, data: { balances: [{ coin: 'USDT', free: '5', frozen: '0' }] } };
+};
+
 function createFakeNetwork({ lunoStatus = 200 } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url: String(url), init });
     if (String(url).startsWith('https://api.luno.com')) return json({ balance: [{ asset: 'XBT', balance: '1' }] }, lunoStatus);
-    if (String(url).startsWith('https://api.pionex.com')) return json({ result: true, data: { balances: [{ coin: 'USDT', free: '5', frozen: '0' }] } });
+    if (String(url).startsWith('https://api.pionex.com')) return json(pionexBody(url));
     return new Response(null, { status: 204 });
   };
   return { calls, fetchImpl };
@@ -335,7 +342,7 @@ test('sync: a Pionex rate limit is noted, the partial trades are saved, and bala
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url: String(url), init });
     if (String(url).includes('fills')) return new Response('', { status: 429 });
-    if (String(url).startsWith('https://api.pionex.com')) return json({ result: true, data: { balances: [{ coin: 'USDT', free: '5', frozen: '0' }] } });
+    if (String(url).startsWith('https://api.pionex.com')) return json(pionexBody(url));
     return new Response(null, { status: 204 });
   };
   const env = { SYNC_ALWAYS: 'true', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_KEY: 'k', PIONEX_API_KEY: 'a', PIONEX_API_SECRET: 'b' };
@@ -456,4 +463,29 @@ test('Pionex: the renamed coin GRAM is read as TON, for balances and for trades'
   const rows = await fetchPionexTrades({ apiKey: 'k', apiSecret: 's', fetchImpl, now: () => 1761800005000, wait: async () => {} });
   assert.ok(symbols.includes('GRAM_USDT') && symbols.includes('TON_USDT'));
   assert.deepEqual(rows.map((r) => [r.external_id, r.asset, r.qty]), [['pionex:9', 'TON', 2]]);
+});
+
+test('Pionex Earn: the Earn amount is added to the spot balance, and the profit field is not', async () => {
+  const outcomes = await runBrokerSync({ ...baseEnv, LUNO_KEY_ID: '', LUNO_KEY_SECRET: '' }, { fetchImpl: createFakeNetwork().fetchImpl, wait: async () => {} });
+  assert.deepEqual(outcomes.map((o) => [o.broker, o.ok]), [['Pionex', true]]);
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    return String(url).startsWith('https://api.pionex.com') ? json(pionexBody(url)) : new Response(null, { status: 204 });
+  };
+  await runBrokerSync({ ...baseEnv, LUNO_KEY_ID: '', LUNO_KEY_SECRET: '' }, { fetchImpl, wait: async () => {} });
+  const saved = calls.find((call) => call.url.includes('broker_balances?on_conflict') && call.init.body);
+  assert.deepEqual(JSON.parse(saved.init.body).map((row) => [row.asset, row.qty]), [['Pionex Cash', 8]], 'spot 5 + Earn 3');
+});
+
+test('Pionex Earn: a Dual Investment balance is refused, never guessed', async () => {
+  const fetchImpl = async (url) => json(String(url).includes('/earn/dual/') ? { result: true, data: { balances: [{ coin: 'BTC' }] } } : pionexBody(url));
+  await assert.rejects(fetchPionexEarnBalances({ apiKey: 'k', apiSecret: 's', fetchImpl, wait: async () => {} }), /Dual Investment/);
+});
+
+test('Pionex Earn: a failed Earn read fails the whole balance read', async () => {
+  const fetchImpl = async (url) => (String(url).includes('/earn/arbitrage/') ? json({ result: false, code: 'PERMISSION_DENIED' }) : json(pionexBody(url)));
+  const outcomes = await runBrokerSync({ ...baseEnv, LUNO_KEY_ID: '', LUNO_KEY_SECRET: '' }, { fetchImpl: async (url, init) => (String(url).startsWith('https://api.pionex.com') ? fetchImpl(url) : new Response(null, { status: 204 })), wait: async () => {} });
+  assert.equal(outcomes[0].ok, false);
+  assert.match(outcomes[0].message, /Enable reading/);
 });
