@@ -54,9 +54,9 @@ export function getCashAssetForBroker(broker) {
   return entry ? entry.asset : null;
 }
 
-// Assets that can be bought and sold (not cash or money market funds).
+// Assets that can be bought and sold (not cash). A money market fund is bought and sold at RM 1 per unit.
 export function getTradableAssetsForBroker(broker) {
-  return getAssetsForBroker(broker).filter((entry) => entry.category === 'Crypto' || entry.category === 'Stocks');
+  return getAssetsForBroker(broker).filter((entry) => entry.category === 'Crypto' || entry.category === 'Stocks' || entry.category === 'MMF');
 }
 
 // Brokers that offer at least one tradable asset.

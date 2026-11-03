@@ -266,6 +266,7 @@ Choose **Add entry** and pick a type. Every entry can carry a date and a note.
 | --- | --- |
 | Buy | Adds the asset. Takes the amount paid, plus the fee, out of the broker's cash. |
 | Sell | Removes the asset. Adds the amount received, minus the fee, to the broker's cash. |
+| Buy or Sell of **Moomoo MMF** | The quantity is the RM amount, at RM 1 per unit. A buy moves cash from Moomoo Cash into the fund as principal. A sell moves cash back, and only the gain part of the amount is booked as profit. Webull buys and sells work the same way as other brokers: the box "Deduct from Webull Cash" is ticked by default. |
 | Transfer between accounts | Moves cash from one account to another. The received amount is filled in at today's rate and can be changed. |
 | Deposit from outside | Adds money from outside the portfolio, such as income, to one account. |
 | Cash out to outside | Takes money out of the portfolio, such as spending, from one account. |
