@@ -296,7 +296,10 @@ export function planTradeImport({ trades, positions, marketPrices, useCash = fal
 // Sets the coins of one broker to the quantity the broker reports, so the portfolio always matches the broker.
 // The average cost is kept (coins added or removed carry the average cost); with no coins held, the market price is used.
 // Returns { positions, records, notes }, one note per correction.
-export function planBalanceAlignment({ positions, balances, broker, assets, marketPrices, tradeDate }) {
+// restoreUnitCost (optional): { ASSET: RM per coin }. Used only when coins come BACK to a holding that is empty or has no
+// usable cost (for example coins returned from a bot or Earn that an earlier correction had removed at their average
+// cost), so they return with the cost they left with, not at RM 0.
+export function planBalanceAlignment({ positions, balances, broker, assets, marketPrices, tradeDate, restoreUnitCost = {} }) {
   let current = positions;
   const records = [];
   const notes = [];
@@ -309,7 +312,9 @@ export function planBalanceAlignment({ positions, balances, broker, assets, mark
 
     const base = position ?? { id: null, category: 'Crypto', broker, asset, qty: 0, costMyr: 0, realisedPl: 0 };
     const coinId = findAsset(asset)?.coinId;
-    const unitCost = held > 0 ? base.costMyr / held : (coinId ? (marketPrices[coinId] ?? 0) : 0);
+    let unitCost = held > 0 ? base.costMyr / held : (coinId ? (marketPrices[coinId] ?? 0) : 0);
+    const hasUsableCost = held > 1e-6 && base.costMyr / held > 0;
+    if (reported > held && !hasUsableCost && restoreUnitCost[asset] > 0) unitCost = restoreUnitCost[asset];
     const after = reported <= QUANTITY_EPSILON
       ? { ...base, qty: 0, costMyr: 0 }
       : { ...base, qty: reported, costMyr: roundTo(unitCost * reported, MONEY_DECIMALS) };

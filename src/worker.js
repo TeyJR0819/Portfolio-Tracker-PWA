@@ -2,6 +2,7 @@
 // Static files in public/ are served by Cloudflare directly. Only /api/* requests reach this code.
 
 import { runBrokerSync } from './brokers/sync.js';
+import { dispatchPionexWorkflow } from './github-dispatch.js';
 import { runLedgerSync } from './ledger-sync.js';
 import { handleStocksRequest } from './stocks.js';
 
@@ -41,7 +42,11 @@ export default {
   //   LEDGER_CRON  records new trades in the ledger and syncs cash
   //   any other    reads the brokers
   async scheduled(event, env, context) {
-    const run = event.cron === LEDGER_CRON ? runLedgerSync(env).then((outcome) => [outcome]) : runBrokerSync(env);
+    const isLedger = event.cron === LEDGER_CRON;
+    // The broker run also asks GitHub to start the Pionex workflow (see github-dispatch.js).
+    const run = isLedger
+      ? runLedgerSync(env).then((outcome) => [outcome])
+      : Promise.all([runBrokerSync(env), dispatchPionexWorkflow(env)]).then(([outcomes, dispatch]) => (dispatch ? [...outcomes, dispatch] : outcomes));
     context.waitUntil(
       run.then((outcomes) => {
         if (outcomes.length === 0) console.log('sync: nothing was due in this run.');
