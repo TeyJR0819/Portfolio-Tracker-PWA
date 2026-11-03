@@ -218,11 +218,14 @@ test('a deposit from outside adds cash and a cash out takes it away', () => {
   assert.throws(() => plan({ kind: 'cashout', account: 'Bank Cash', amount: 99999 }), /less than/);
 });
 
-test('a deposit into IBKR is typed in USD', () => {
-  const result = plan({ kind: 'deposit', account: 'IBKR Cash', amount: 200 });
-  assert.equal(after(result, 'IBKR Cash').qty, 1200);
-  assert.equal(after(result, 'IBKR Cash').costMyr, 3800 + 800);
-  assert.equal(result.record.currency, 'USD');
+test('a deposit from outside to a broker is refused, because a broker is funded by a transfer from the bank', () => {
+  assert.throws(() => plan({ kind: 'deposit', account: 'IBKR Cash', amount: 200 }), /Bank Cash only/);
+});
+
+test('a transfer from Bank Cash to a broker takes the money out of the bank', () => {
+  const result = plan({ kind: 'transfer', fromAccount: 'Bank Cash', toAccount: 'Luno Cash', amountSent: 500, amountReceived: 500 });
+  assert.equal(after(result, 'Bank Cash').qty, 4500);
+  assert.equal(after(result, 'Luno Cash').qty, 1500);
 });
 
 // ---------- MMF gain and adjustment ----------
