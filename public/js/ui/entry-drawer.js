@@ -240,6 +240,7 @@ export function initEntryDrawer({ onSaved }) {
 
     const accounts = getAccounts();
     if (kind === 'mmf_gain') fillAccountList(fields.account, accounts.filter((account) => account.category === 'MMF'));
+    else if (kind === 'deposit') fillAccountList(fields.account, accounts.filter((account) => account.broker === 'Bank'));
     else fillAccountList(fields.account, accounts);
 
     if (isTrade()) {
@@ -325,7 +326,9 @@ export function initEntryDrawer({ onSaved }) {
     const accounts = getAccounts();
     fillAccountList(fields.from, accounts);
     fillAccountList(fields.to, accounts);
-    fields.to.value = accounts[1]?.asset ?? accounts[0].asset;
+    fields.to.value = accounts.find((account) => account.broker !== 'Bank')?.asset ?? accounts[0].asset;
+    // Adding cash to a broker is a Transfer, and it starts from the bank.
+    if (accounts.some((account) => account.asset === 'Bank Cash')) fields.from.value = 'Bank Cash';
     populateAssets();
     showMode();
     showKind();

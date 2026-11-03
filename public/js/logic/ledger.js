@@ -298,6 +298,11 @@ function planTransfer(input, context) {
 function planOutsideMovement(input, context) {
   const isDeposit = input.kind === 'deposit';
   const account = readAccount(input.account);
+  // Money from outside enters the portfolio only at the bank. A broker is funded by a Transfer from Bank Cash, which
+  // takes the money out of the bank at the same time.
+  if (isDeposit && account.broker !== 'Bank') {
+    throw new Error('A deposit from outside goes to Bank Cash only. To add cash to a broker, use Transfer between accounts from Bank Cash.');
+  }
   const amount = requirePositive(input.amount, 'Enter an amount greater than zero.');
   const rate = context.rateFor(account.currency);
   const valueMyr = amount * rate;
