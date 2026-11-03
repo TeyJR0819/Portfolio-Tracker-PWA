@@ -252,3 +252,27 @@ test('adjusting an account that does not exist yet creates it', () => {
 test('an unknown entry type is refused', () => {
   assert.throws(() => plan({ kind: 'gift' }), /Choose an entry type/);
 });
+
+// ---------- Money market fund buy and sell ----------
+
+test('MMF buy: takes RM from Moomoo Cash and adds principal to the fund at RM 1 per unit', () => {
+  const positions = createPositions().map((p) => (p.asset === 'Moomoo Cash' ? { ...p, qty: 1000, costMyr: 1000 } : p));
+  const result = planEntry({ tradeDate: '2026-11-03', note: '', kind: 'buy', broker: 'Moomoo', asset: 'Moomoo MMF', qty: 500, useCash: true }, { positions, marketPrices: RATES });
+  assert.equal(after(result, 'Moomoo MMF').qty, 3500);
+  assert.equal(after(result, 'Moomoo MMF').costMyr, 3500);
+  assert.equal(after(result, 'Moomoo Cash').qty, 500);
+  assert.equal(result.record.realisedPl, 0);
+});
+
+test('MMF sell: pays the cash back and books only the gain part as profit', () => {
+  const positions = createPositions().map((p) => (p.asset === 'Moomoo MMF' ? { ...p, qty: 3300, costMyr: 3000 } : p)); // RM 300 of gain
+  const result = planEntry({ tradeDate: '2026-11-03', note: '', kind: 'sell', broker: 'Moomoo', asset: 'Moomoo MMF', qty: 1100, useCash: true }, { positions, marketPrices: RATES });
+  assert.equal(after(result, 'Moomoo MMF').qty, 2200);
+  assert.equal(after(result, 'Moomoo MMF').costMyr, 2000);
+  assert.equal(after(result, 'Moomoo Cash').qty, 1100);
+  assert.equal(result.record.realisedPl, 100, 'one third of the redemption is gain');
+});
+
+test('MMF buy: more than the cash held is refused', () => {
+  assert.throws(() => plan({ kind: 'buy', broker: 'Moomoo', asset: 'Moomoo MMF', qty: 500, useCash: true }), /Moomoo Cash holds/);
+});

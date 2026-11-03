@@ -6,6 +6,7 @@ import { BASE_CURRENCY } from '../config.js';
 import { findRate, roundTo } from '../logic/calculations.js';
 import {
   findAccount,
+  findAsset,
   getAccounts,
   getBrokerCurrency,
   getCashAssetForBroker,
@@ -202,6 +203,11 @@ export function initEntryDrawer({ onSaved }) {
 
   // Suggests the current market price, converted to the broker's currency.
   function fillMarketPrice() {
+    const fixedPrice = findAsset(fields.asset.value)?.fixedPrice;
+    if (fixedPrice) {
+      fields.price.value = String(fixedPrice); // A money market fund is always RM 1 per unit.
+      return;
+    }
     const reference = getBasePortfolio().holdings.find(
       (holding) => holding.asset === fields.asset.value && holding.priceSource === 'market',
     );

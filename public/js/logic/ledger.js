@@ -150,10 +150,13 @@ function rateLine(currency, rate) {
 // Inputs: broker, asset, qty, entryMode ('price' or 'total'), price, total, fee, useCash.
 //   price mode: the trade value is qty x price. A buy costs value + fee; a sale pays value - fee.
 //   total mode: "total" is the cash that actually left (buy) or arrived (sale), fee included.
-function planTrade(input, context) {
+//   A money market fund (MMF) is bought and sold in RM at RM 1 per unit, so its price is fixed. Its quantity is the RM
+//   balance (principal plus gains) and its cost is the principal. Selling therefore books only the gain part as profit.
+function planTrade(rawInput, context) {
+  const entry = findAsset(rawInput.asset);
+  if (!entry || !['Crypto', 'Stocks', 'MMF'].includes(entry.category)) throw new Error('Choose an asset to trade.');
+  const input = entry.category === 'MMF' ? { ...rawInput, entryMode: 'price', price: entry.fixedPrice ?? 1 } : rawInput;
   const isBuy = input.kind === 'buy';
-  const entry = findAsset(input.asset);
-  if (!entry || !['Crypto', 'Stocks'].includes(entry.category)) throw new Error('Choose an asset to trade.');
 
   const currency = getBrokerCurrency(input.broker);
   const rate = context.rateFor(currency);
