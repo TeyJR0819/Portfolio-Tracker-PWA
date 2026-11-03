@@ -131,10 +131,10 @@ function planLunoCryptoAlignment({ positions, balances, syncedBrokers, blockedKe
 // money, so coins that sit in a bot never count in the portfolio. A coin just sent from Luno is skipped for a short
 // time, because the hourly Pionex read may not show it yet.
 const RECENT_SEND_MS = 2 * 60 * 60 * 1000;
-function planPionexCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, recentSendAssets, marketPrices, tradeDate }) {
+function planPionexCryptoAlignment({ positions, balances, syncedBrokers, blockedKeys, recentSendAssets, restoreUnitCost, marketPrices, tradeDate }) {
   if (!syncedBrokers.has('Pionex')) return { positions, records: [], notes: [] };
   const assets = TRADED_ASSETS.filter((asset) => !blockedKeys?.has(`Pionex|${asset}`) && !recentSendAssets.has(asset));
-  return planBalanceAlignment({ positions, balances, broker: 'Pionex', assets, marketPrices, tradeDate });
+  return planBalanceAlignment({ positions, balances, broker: 'Pionex', assets, marketPrices, tradeDate, restoreUnitCost });
 }
 
 // Detects if any previously imported Luno transaction in `transactions` is stale or was misclassified
@@ -338,12 +338,19 @@ export async function runLedgerSync(env, { fetchImpl = fetch, now = () => new Da
     // 2b. Align Pionex crypto with the Pionex trading-account balance (bot and earn money is not in it)
     const sendSides = new Set(['send', 'transfer_to_pionex']);
     const recentSendAssets = new Set(trades.filter((t) => sendSides.has(t.side) && now().getTime() - t.tradedAt < RECENT_SEND_MS).map((t) => t.asset));
+    // The cost per coin at which an earlier correction removed coins from Pionex (the newest one for each coin).
+    const removalRows = await database.select('transactions', `select=asset,price,qty,broker&note=like.${encodeURIComponent('Pionex balance applied*')}&order=id.desc`);
+    const restoreUnitCost = {};
+    for (const row of removalRows) {
+      if (row.broker === 'Pionex' && Number(row.qty) < 0 && Number(row.price) > 0 && !(row.asset in restoreUnitCost)) restoreUnitCost[row.asset] = Number(row.price);
+    }
     const pionexAligned = planPionexCryptoAlignment({
       positions: lunoAligned.positions,
       balances: parsedBalances,
       syncedBrokers,
       blockedKeys: tradePlan.blockedKeys,
       recentSendAssets,
+      restoreUnitCost,
       marketPrices,
       tradeDate,
     });

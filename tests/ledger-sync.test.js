@@ -384,3 +384,16 @@ test('ledger sync: a cash balance that differs by less than half a cent writes n
   assert.equal(fake.data.transactions.filter((row) => row.note === 'Synced from Pionex').length, 0);
   assert.equal(find(fake.data, 'Pionex', 'Pionex Cash').qty, 40);
 });
+
+test('ledger sync: coins that return from a bot or Earn come back with the cost they left with, not at RM 0', async () => {
+  const tables = baseTables();
+  tables.broker_trades = [];
+  tables.broker_balances = [{ broker: 'Luno', asset: 'Luno Cash', qty: 0 }, { broker: 'Pionex', asset: 'LINK', qty: 14 }, { broker: 'Pionex', asset: 'Pionex Cash', qty: 0 }];
+  tables.portfolio = [{ id: 1, category: 'Crypto', broker: 'Pionex', asset: 'LINK', qty: 0.00000001, cost_myr: 0, realised_pl: 0 }];
+  tables.transactions = [{ id: 1, external_id: null, kind: 'adjust', broker: 'Pionex', asset: 'LINK', qty: -7.9, price: 50, note: 'Pionex balance applied (-7.9 LINK); coins in a bot are not counted' }];
+  const fake = createFakeSupabase({ tables });
+  const outcome = await run(fake);
+  assert.equal(outcome.ok, true, outcome.message);
+  assert.equal(find(fake.data, 'Pionex', 'LINK').qty, 14);
+  assert.equal(find(fake.data, 'Pionex', 'LINK').cost_myr, 700, '14 coins at the RM 50 they left with');
+});
