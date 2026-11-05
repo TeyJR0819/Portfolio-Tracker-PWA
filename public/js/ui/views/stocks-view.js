@@ -17,6 +17,6 @@ export function renderStocksView({ holdings }) {
     columns: createHoldingColumns({ quantityLabel: 'Units', showBroker: true }),
     rows: stocks.filter(isVisibleHolding).sort((a, b) => b.marketValue - a.marketValue),
     totals,
-    emptyMessage: 'No ETF holdings yet. Choose Add entry and buy VOO, QQQM or SPYL.',
+    emptyMessage: 'No ETF holdings yet. Choose Add entry and buy VOO, QQQM, SPYL or SMH.',
   });
 }

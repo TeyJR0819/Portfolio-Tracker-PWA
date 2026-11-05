@@ -8,8 +8,8 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 - A switch in the header shows every amount in RM or in USD.
 - Live MYR prices, cached for 120 seconds, with fallback to the last known price and then to average cost.
   - Crypto: CoinGecko.
-  - Stocks (VOO, QQQM, SPYL): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
-- Brokers: Luno, Pionex, Moomoo, Webull, IBKR and Bank. Webull and IBKR hold the same stocks as Moomoo.
+  - Stocks (VOO, QQQM, SPYL, SMH): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
+- Brokers: Luno, Pionex, Moomoo, Webull, IBKR and Bank. Webull and IBKR hold the same stocks as Moomoo, except SMH, which only Moomoo and Webull hold.
 - Cash accounts for Bank, Luno, Pionex (USDT), Moomoo, Webull and IBKR (USD), plus the Moomoo MMF.
 - One "Add entry" form for every kind of entry (see Entries below), with optional fees and a note.
 - Weighted-average cost, realised profit or loss, and the cost per unit calculated from the amount paid.

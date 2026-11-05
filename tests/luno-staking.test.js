@@ -96,7 +96,7 @@ test('pairing: only equal and opposite moves between two accounts are paired', (
 
 test('Webull holds the same stocks and a cash account like Moomoo', () => {
   const names = [...getTradableAssetsForBroker('Webull').map((entry) => entry.asset), getCashAssetForBroker('Webull')];
-  assert.deepEqual(names.sort(), ['QQQM', 'SPYL', 'VOO', 'Webull Cash']);
+  assert.deepEqual(names.sort(), ['QQQM', 'SMH', 'SPYL', 'VOO', 'Webull Cash']);
 });
 
 test('transfers: two instant buys close together each keep their own RM cost', async () => {

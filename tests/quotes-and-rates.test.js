@@ -6,7 +6,7 @@ import { getBrokerCurrency, getCoinIds, getStockSymbols } from '../public/js/log
 import { convertQuotesToMyr } from '../public/js/logic/quotes.js';
 
 test('catalogue lists stock symbols and always asks for the USDT rate', () => {
-  assert.deepEqual(getStockSymbols(), ['VOO', 'QQQM', 'SPYL.L']);
+  assert.deepEqual(getStockSymbols(), ['VOO', 'QQQM', 'SPYL.L', 'SMH']);
   assert.ok(getCoinIds().includes('tether'));
 });
 

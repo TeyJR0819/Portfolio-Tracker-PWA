@@ -71,6 +71,7 @@ export const ASSET_CATALOG = Object.freeze([
   { asset: 'VOO', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'VOO', color: '#7C3AED' },
   { asset: 'QQQM', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'QQQM', color: '#A78BFA' },
   { asset: 'SPYL', category: 'Stocks', brokers: ['Moomoo', 'Webull', 'IBKR'], stockSymbol: 'SPYL.L', color: '#C4B5FD' },
+  { asset: 'SMH', category: 'Stocks', brokers: ['Moomoo', 'Webull'], stockSymbol: 'SMH', color: '#DDD6FE' },
 ]);
 
 export const BROKER_ORDER = Object.freeze(['Luno', 'Pionex', 'Moomoo', 'Webull', 'IBKR', 'Bank']);
