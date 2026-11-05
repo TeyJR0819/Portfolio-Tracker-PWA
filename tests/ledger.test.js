@@ -279,3 +279,34 @@ test('MMF sell: pays the cash back and books only the gain part as profit', () =
 test('MMF buy: more than the cash held is refused', () => {
   assert.throws(() => plan({ kind: 'buy', broker: 'Moomoo', asset: 'Moomoo MMF', qty: 500, useCash: true }), /Moomoo Cash holds/);
 });
+
+// ---------- Currency of the typed amounts ----------
+
+test('entry currency: an IBKR buy typed in RM is converted to USD and keeps the RM cost', () => {
+  const result = plan({ kind: 'buy', broker: 'IBKR', asset: 'VOO', qty: 1, entryMode: 'total', total: 2400, fee: 0, useCash: true, entryCurrency: 'MYR' });
+  assert.equal(result.record.currency, 'USD');
+  assert.equal(result.record.amountFrom, 600); // USD 600 left IBKR Cash
+  assert.equal(after(result, 'VOO').costMyr, 4800 + 2400);
+  assert.equal(after(result, 'IBKR Cash').qty, 400);
+});
+
+test('entry currency: a Bank deposit typed in USD is converted to RM', () => {
+  const result = plan({ kind: 'deposit', account: 'Bank Cash', amount: 100, entryCurrency: 'USD' });
+  assert.equal(after(result, 'Bank Cash').qty, 5400);
+  assert.equal(result.previewLines[0].label, 'Amounts typed in');
+});
+
+test('entry currency: the account currency, or no choice, leaves the amounts unchanged', () => {
+  const same = plan({ kind: 'deposit', account: 'Bank Cash', amount: 100, entryCurrency: 'MYR' });
+  const none = plan({ kind: 'deposit', account: 'Bank Cash', amount: 100 });
+  assert.equal(after(same, 'Bank Cash').qty, 5100);
+  assert.equal(after(none, 'Bank Cash').qty, 5100);
+  assert.equal(same.previewLines[0].label, 'Deposit');
+});
+
+test('entry currency: a transfer and an MMF buy ignore the choice', () => {
+  const transfer = plan({ kind: 'transfer', fromAccount: 'Bank Cash', toAccount: 'IBKR Cash', amountSent: 400, amountReceived: 100, entryCurrency: 'USD' });
+  assert.equal(after(transfer, 'Bank Cash').qty, 4600);
+  const mmf = plan({ kind: 'buy', broker: 'Moomoo', asset: 'Moomoo MMF', qty: 100, entryMode: 'price', price: 1, fee: 0, useCash: false, entryCurrency: 'USD' });
+  assert.equal(after(mmf, 'Moomoo MMF').qty, 3100);
+});

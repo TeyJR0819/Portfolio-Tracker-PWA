@@ -283,6 +283,8 @@ For a buy or a sell, enter either the price per unit or the total amount. With t
 | Pionex (crypto and Pionex Cash) | USDT | RM |
 | Luno, Moomoo, Webull and Bank | RM | RM |
 
+In the Add entry form, **Currency of the amounts** lets you type a Buy, Sell, Deposit, Cash out or Adjust balance in RM or USD, whatever the account works in. The app converts the amounts to the account's own currency at the current rate and shows the rate in the preview. Transfers, MMF entries and MMF gains keep each amount in its own account's currency.
+
 The form shows the exchange rate used. The cost basis is fixed at the rate of the day of the entry. The USD rate comes from Yahoo Finance. The USDT rate comes from CoinGecko. If only one of them is available, it stands in for the other. USD and USDT cash balances are valued at the current rate, so their profit or loss includes the exchange-rate effect. This effect becomes realised when the cash is moved or spent.
 
 The switch in the header only changes how amounts are shown. The database always holds RM costs.

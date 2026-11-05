@@ -410,6 +410,39 @@ function planAdjustment(input, context) {
   return { changes: [{ before: position, after }], record, previewLines };
 }
 
+// ---------- Currency of the typed amounts ----------
+
+// The person may type amounts in RM or USD even when the account works in another currency (for example RM for an
+// IBKR purchase). input.entryCurrency names the currency of the typed amounts. They are converted to the account's
+// own currency at the current rate before planning, so every planner above still sees its account's currency.
+const CONVERTED_MONEY_FIELDS = ['total', 'fee', 'amount', 'balance'];
+const CONVERTED_PRICE_DECIMALS = 6;
+
+function findAccountCurrency(input) {
+  if (input.kind === 'buy' || input.kind === 'sell') {
+    return findAsset(input.asset)?.category === 'MMF' ? null : getBrokerCurrency(input.broker);
+  }
+  if (['deposit', 'cashout', 'adjust'].includes(input.kind)) return findAccount(input.account)?.currency ?? null;
+  return null; // A transfer states each amount in its own account's currency already. An MMF gain is always RM.
+}
+
+function applyEntryCurrency(input, context) {
+  const accountCurrency = findAccountCurrency(input);
+  const entryCurrency = input.entryCurrency;
+  if (!accountCurrency || !entryCurrency || entryCurrency === accountCurrency) return { input, lines: [] };
+
+  const entryRate = context.rateFor(entryCurrency);
+  const factor = entryRate / context.rateFor(accountCurrency);
+  const converted = { ...input };
+  for (const field of CONVERTED_MONEY_FIELDS) {
+    if (Number.isFinite(converted[field])) converted[field] = roundTo(converted[field] * factor, MONEY_DECIMALS);
+  }
+  if (Number.isFinite(converted.price)) converted.price = roundTo(converted.price * factor, CONVERTED_PRICE_DECIMALS);
+
+  const rateText = entryCurrency === BASE_CURRENCY ? `1 ${accountCurrency} = RM ${(1 / factor).toFixed(4)}` : `1 ${entryCurrency} = RM ${entryRate.toFixed(4)}`;
+  return { input: converted, lines: [line('Amounts typed in', `${entryCurrency === BASE_CURRENCY ? 'RM' : entryCurrency}, converted at ${rateText}`)] };
+}
+
 // ---------- Entry point ----------
 
 const PLANNERS = Object.freeze({
@@ -426,5 +459,8 @@ const PLANNERS = Object.freeze({
 export function planEntry(input, { positions, marketPrices }) {
   const planner = PLANNERS[input.kind];
   if (!planner) throw new Error('Choose an entry type.');
-  return planner(input, createContext(positions, marketPrices));
+  const context = createContext(positions, marketPrices);
+  const { input: converted, lines } = applyEntryCurrency(input, context);
+  const result = planner(converted, context);
+  return lines.length > 0 ? { ...result, previewLines: [...lines, ...result.previewLines] } : result;
 }

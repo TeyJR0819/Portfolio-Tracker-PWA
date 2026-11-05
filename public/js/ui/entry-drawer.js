@@ -60,6 +60,7 @@ export function initEntryDrawer({ onSaved }) {
     received: byId('entry-received'),
     account: byId('entry-account'),
     amount: byId('entry-amount'),
+    currency: byId('entry-currency'),
   };
   const submitButton = byId('entry-submit');
   const errorBox = byId('entry-error');
@@ -72,6 +73,7 @@ export function initEntryDrawer({ onSaved }) {
   const getMode = () => form.elements['entry-mode'].value;
   const isTrade = () => TRADE_KINDS.includes(getKind());
   const getPositions = () => getState().positions;
+  const getEntryCurrency = () => fields.currency.value || BASE_CURRENCY;
   const getRate = (currency) => (currency === BASE_CURRENCY ? 1 : findRate(getState().marketPrices, currency));
 
   // ---------- Reading and checking ----------
@@ -96,6 +98,7 @@ export function initEntryDrawer({ onSaved }) {
       account: fields.account.value,
       amount: parseNumber(fields.amount.value),
       balance: parseNumber(fields.amount.value),
+      entryCurrency: getEntryCurrency(),
     };
   }
 
@@ -152,7 +155,7 @@ export function initEntryDrawer({ onSaved }) {
   function updateTradeLabels() {
     const isBuy = getKind() === 'buy';
     const currency = getBrokerCurrency(fields.broker.value);
-    const unit = unitName(currency);
+    const unit = unitName(getEntryCurrency());
     const cashAsset = getCashAssetForBroker(fields.broker.value);
 
     setLabel('entry-price-label', `Price per unit (${unit})`);
@@ -176,7 +179,7 @@ export function initEntryDrawer({ onSaved }) {
 
   function updateAccountLabels() {
     const account = findAccount(fields.account.value);
-    const unit = unitName(account?.currency ?? BASE_CURRENCY);
+    const unit = unitName(getEntryCurrency());
     const labels = {
       deposit: `Amount deposited (${unit})`,
       cashout: `Amount taken out (${unit})`,
@@ -211,8 +214,43 @@ export function initEntryDrawer({ onSaved }) {
     const reference = getBasePortfolio().holdings.find(
       (holding) => holding.asset === fields.asset.value && holding.priceSource === 'market',
     );
-    const rate = getRate(getBrokerCurrency(fields.broker.value));
+    const rate = getRate(getEntryCurrency());
     fields.price.value = reference && rate ? String(roundTo(reference.unitPrice / rate, 4)) : '';
+  }
+
+  // ---------- Currency of the typed amounts ----------
+
+  // The currency the chosen broker or account works in. Null when the amounts are not converted
+  // (a transfer, an MMF gain, or an MMF buy or sell, which are fixed to their own currency).
+  function getAccountCurrency() {
+    if (isTrade()) return findAsset(fields.asset.value)?.category === 'MMF' ? null : getBrokerCurrency(fields.broker.value);
+    if (['deposit', 'cashout', 'adjust'].includes(getKind())) return findAccount(fields.account.value)?.currency ?? null;
+    return null;
+  }
+
+  // Offers RM and USD, plus the account's own currency when it is another one (USDT).
+  // The account's own currency is chosen again whenever the broker, account or type changes.
+  function syncCurrency({ reset }) {
+    const accountCurrency = getAccountCurrency();
+    byId('entry-currency-field').hidden = !accountCurrency;
+    if (!accountCurrency) {
+      fields.currency.replaceChildren();
+      return;
+    }
+
+    const choices = [...new Set([BASE_CURRENCY, 'USD', accountCurrency])];
+    const previous = fields.currency.value;
+    fields.currency.replaceChildren(...choices.map((currency) => toOption(currency, unitName(currency))));
+    fields.currency.value = !reset && choices.includes(previous) ? previous : accountCurrency;
+
+    const entryCurrency = getEntryCurrency();
+    const rate = getRate(entryCurrency);
+    byId('entry-currency-help').textContent =
+      entryCurrency === accountCurrency
+        ? `This account works in ${unitName(accountCurrency)}.`
+        : rate
+          ? `This account works in ${unitName(accountCurrency)}. Amounts are converted at 1 ${entryCurrency} = RM ${rate.toFixed(4)}.`
+          : 'The exchange rate is not available yet. Press Refresh and try again.';
   }
 
   // ---------- Choosing what to show ----------
@@ -232,7 +270,7 @@ export function initEntryDrawer({ onSaved }) {
     fields.asset.replaceChildren(...entries.map((entry) => toOption(entry.asset)));
   }
 
-  function showKind({ resetPrice = true } = {}) {
+  function showKind({ resetPrice = true, resetCurrency = true } = {}) {
     const kind = getKind();
     form.querySelectorAll('[data-kinds]').forEach((group) => {
       group.hidden = !group.dataset.kinds.split(' ').includes(kind);
@@ -242,6 +280,8 @@ export function initEntryDrawer({ onSaved }) {
     if (kind === 'mmf_gain') fillAccountList(fields.account, accounts.filter((account) => account.category === 'MMF'));
     else if (kind === 'deposit') fillAccountList(fields.account, accounts.filter((account) => account.broker === 'Bank'));
     else fillAccountList(fields.account, accounts);
+
+    syncCurrency({ reset: resetCurrency });
 
     if (isTrade()) {
       updateTradeLabels();
@@ -297,7 +337,8 @@ export function initEntryDrawer({ onSaved }) {
     populateAssets();
     showKind();
   });
-  fields.asset.addEventListener('change', () => showKind());
+  fields.asset.addEventListener('change', () => showKind({ resetCurrency: false }));
+  fields.currency.addEventListener('change', () => showKind({ resetCurrency: false }));
   form.elements['entry-mode'].forEach((radio) => radio.addEventListener('change', showMode));
 
   fields.from.addEventListener('change', () => showKind());
