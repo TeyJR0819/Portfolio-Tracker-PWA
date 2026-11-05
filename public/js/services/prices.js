@@ -31,6 +31,12 @@ function isFresh(cache, now) {
   return (now - cache.savedAt) / 1000 < PRICE_CACHE_SECONDS;
 }
 
+// A saved copy is complete when it holds a price for every coin and stock the app asks for.
+// A newly added asset (for example SMH) makes an older copy incomplete, so it is fetched at once.
+function isComplete(cache) {
+  return [...getCoinIds(), ...getStockSymbols()].every((key) => Number.isFinite(cache.prices[key]) && cache.prices[key] > 0);
+}
+
 async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PRICE_REQUEST_TIMEOUT_MS);
@@ -81,7 +87,9 @@ export async function loadMarketPrices({ force = false } = {}) {
   const now = Date.now();
   const cache = readCache();
 
-  if (!force && isFresh(cache, now)) {
+  // An incomplete copy is reused only briefly after an attempt, so a symbol that always fails does not cause endless requests.
+  const recentlyTried = now - lastAttemptAt < PRICE_CACHE_SECONDS * 1000;
+  if (!force && isFresh(cache, now) && (isComplete(cache) || recentlyTried)) {
     return { marketPrices: cache.prices, status: 'cached', updatedAt: cache.savedAt, errorMessage: '' };
   }
   // Repeated taps on Refresh reuse the previous answer, so the price services are not flooded.
