@@ -93,7 +93,7 @@ test('prices stay in the original currency when the rate is missing, with a note
 
 test('London prices in pence are shown in pounds', async () => {
   const { fetchImpl } = createFetch((url) => (url.includes('GBPUSD') ? yahooBody([100], [1.25], 'USD') : yahooBody([100], [5000], 'GBp')));
-  const result = await getCandles({ symbol: 'SPYL.L', interval: '1D', currency: 'USD' }, { fetchImpl });
+  const result = await getCandles({ symbol: 'VUSA.L', interval: '1D', currency: 'USD' }, { fetchImpl });
   assert.equal(result.nativeCurrency, 'GBP');
   assert.equal(result.candles[0].close, 62.5);
 });

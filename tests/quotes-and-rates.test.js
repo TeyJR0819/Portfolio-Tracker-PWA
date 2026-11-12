@@ -6,7 +6,7 @@ import { getBrokerCurrency, getCoinIds, getStockSymbols } from '../public/js/log
 import { convertQuotesToMyr } from '../public/js/logic/quotes.js';
 
 test('catalogue lists stock symbols and always asks for the USDT rate', () => {
-  assert.deepEqual(getStockSymbols(), ['VOO', 'QQQM', 'SPYL.L', 'SMH']);
+  assert.deepEqual(getStockSymbols(), ['VOO', 'QQQM', 'SMH', 'SSO']);
   assert.ok(getCoinIds().includes('tether'));
 });
 
@@ -20,10 +20,10 @@ test('IBKR works in USD, Pionex in USDT, every other broker in RM', () => {
 
 test('convertQuotesToMyr multiplies each price by its currency rate', () => {
   const prices = convertQuotesToMyr({
-    quotes: { VOO: { price: 600, currency: 'USD' }, 'SPYL.L': { price: 50, currency: 'GBP' } },
+    quotes: { VOO: { price: 600, currency: 'USD' }, 'VUSA.L': { price: 50, currency: 'GBP' } },
     fx: { USD: 4, GBP: 5.5 },
   });
-  assert.deepEqual(prices, { VOO: 2400, 'SPYL.L': 275, 'fx:USD': 4 });
+  assert.deepEqual(prices, { VOO: 2400, 'VUSA.L': 275, 'fx:USD': 4 });
 });
 
 test('convertQuotesToMyr skips bad data and uses the fallback USD rate only when needed', () => {

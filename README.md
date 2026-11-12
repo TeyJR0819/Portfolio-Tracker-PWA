@@ -8,7 +8,7 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 - A switch in the header shows every amount in RM or in USD.
 - Live MYR prices, cached for 120 seconds, with fallback to the last known price and then to average cost.
   - Crypto: CoinGecko.
-  - Stocks (VOO, QQQM, SPYL, SMH): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
+  - Stocks (VOO, QQQM, SMH, SSO): Yahoo Finance, with Finnhub as an optional backup, through a Cloudflare function.
 - Brokers: Luno, Pionex, Moomoo, Webull, IBKR and Bank. Webull and IBKR hold the same stocks as Moomoo.
 - Cash accounts for Bank, Luno, Pionex (USDT), Moomoo, Webull and IBKR (USD), plus the Moomoo MMF.
 - One "Add entry" form for every kind of entry (see Entries below), with optional fees and a note.
@@ -336,7 +336,6 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 | "Candles could not be loaded" | Yahoo Finance or CoinGecko refused the request. Try another timeframe, wait a minute, or add the `COINGECKO_API_KEY` secret for coins. |
 | "Stock prices: status 502" | Yahoo Finance refused the request. Add the `FINNHUB_API_KEY` secret as a backup, or try again later. |
 | "The USD to RM rate is not available" | Press Refresh on the dashboard and try again. |
-| SPYL has no price | `SPYL.L` is the London listing. If you hold a different listing, change `stockSymbol` for SPYL in `public/js/config.js`. |
 | The old version appears after a deploy | Raise `CACHE_VERSION` in `public/sw.js`, then reload twice. |
 | Deploy fails with "Missing entry-point" | `wrangler.toml` must contain `main` and an `[assets]` section, as in this repository. Do not add `pages_build_output_dir`. |
 

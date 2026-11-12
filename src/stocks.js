@@ -1,4 +1,4 @@
-// Cloudflare Worker handler: GET /api/stocks?symbols=VOO,QQQM,SPYL.L
+// Cloudflare Worker handler: GET /api/stocks?symbols=VOO,QQQM,SMH,SSO
 //
 // Browsers cannot call Yahoo Finance directly (CORS), and a Finnhub key must stay secret.
 // This function runs on Cloudflare, fetches the quotes and answers with:

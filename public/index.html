@@ -245,14 +245,14 @@
           </div>
 
           <div class="chart-grid chart-grid-four">
-            <article class="card chart-card">
+            <article class="card chart-card" id="card-stocks-moomoo">
               <h3 class="card-title">Moomoo holdings</h3>
               <div class="chart-box">
                 <canvas id="chart-stocks-moomoo" role="img" aria-label="Moomoo ETF holdings"></canvas>
                 <p class="chart-empty" hidden>No Moomoo ETFs yet.</p>
               </div>
             </article>
-            <article class="card chart-card">
+            <article class="card chart-card" id="card-stocks-webull">
               <h3 class="card-title">Webull holdings</h3>
               <div class="chart-box">
                 <canvas id="chart-stocks-webull" role="img" aria-label="Webull ETF holdings"></canvas>
@@ -360,7 +360,7 @@
 
         <!-- Chart -->
         <section class="tab-panel" id="panel-chart" role="tabpanel" aria-labelledby="tab-chart" data-panel="chart" hidden>
-          <article class="card chart-card" id="chart-card">
+          <article class="card candle-card" id="chart-card">
             <div class="chart-topbar">
               <div class="chart-search">
                 <label class="visually-hidden" for="chart-search-input">Search stocks, ETFs and coins</label>

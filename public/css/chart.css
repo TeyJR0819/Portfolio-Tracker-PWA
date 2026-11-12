@@ -1,12 +1,12 @@
 /* The Chart tab: search, timeframes, drawing tools and the candlestick chart. */
 
-.chart-card {
+.candle-card {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-3);
 }
 
-.chart-card.is-fullscreen {
+.candle-card.is-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 40;
@@ -330,12 +330,12 @@
   height: clamp(22rem, 68vh, 44rem);
 }
 
-.chart-card.is-fullscreen .chart-workspace,
-.chart-card.is-fullscreen .chart-stage {
+.candle-card.is-fullscreen .chart-workspace,
+.candle-card.is-fullscreen .chart-stage {
   height: 100%;
 }
 
-.chart-card.is-fullscreen .chart-canvas {
+.candle-card.is-fullscreen .chart-canvas {
   height: 100%;
 }
 
@@ -410,7 +410,7 @@
 }
 
 @media (max-width: 40rem) {
-  .chart-card {
+  .candle-card {
     padding: var(--space-2);
   }
 

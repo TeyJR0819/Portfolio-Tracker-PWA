@@ -1,6 +1,7 @@
 import { groupTotals, isVisibleHolding, summarise } from '../../logic/calculations.js';
 import { getAssetColor } from '../../logic/catalog.js';
 import { formatPercent, formatSignedMoney } from '../../logic/format.js';
+import { byId } from '../dom.js';
 import { createHoldingColumns } from '../columns.js';
 import { upsertDonut } from '../charts.js';
 import { setMetric } from '../metrics.js';
@@ -12,6 +13,13 @@ function toSlices(holdings) {
     .map((group, index) => ({ label: group.key, value: group.marketValue, color: getAssetColor(group.key, index) }));
 }
 
+function renderBrokerDonut(broker, stocks) {
+  const key = broker.toLowerCase();
+  const slices = toSlices(stocks.filter((holding) => holding.broker === broker));
+  upsertDonut(`chart-stocks-${key}`, slices, { centerTitle: broker });
+  byId(`card-stocks-${key}`).hidden = !slices.some((slice) => slice.value > 0);
+}
+
 export function renderStocksView({ holdings }) {
   const stocks = holdings.filter((holding) => holding.category === 'Stocks');
   const totals = summarise(stocks);
@@ -21,8 +29,9 @@ export function renderStocksView({ holdings }) {
   setMetric('metric-stocks-pl', totals.unrealisedPl, { format: formatSignedMoney, toned: true });
   setMetric('metric-stocks-pct', totals.unrealisedPlPct, { format: formatPercent, toned: true });
 
-  upsertDonut('chart-stocks-moomoo', toSlices(stocks.filter((holding) => holding.broker === 'Moomoo')), { centerTitle: 'Moomoo' });
-  upsertDonut('chart-stocks-webull', toSlices(stocks.filter((holding) => holding.broker === 'Webull')), { centerTitle: 'Webull' });
+  // Moomoo and Webull only get a chart while they hold something. IBKR and Combined always show.
+  renderBrokerDonut('Moomoo', stocks);
+  renderBrokerDonut('Webull', stocks);
   upsertDonut('chart-stocks-ibkr', toSlices(stocks.filter((holding) => holding.broker === 'IBKR')), { centerTitle: 'IBKR' });
   upsertDonut('chart-stocks-combined', toSlices(stocks), { centerTitle: 'Combined' });
 
@@ -30,6 +39,6 @@ export function renderStocksView({ holdings }) {
     columns: createHoldingColumns({ quantityLabel: 'Units', showBroker: true }),
     rows: stocks.filter(isVisibleHolding).sort((a, b) => b.marketValue - a.marketValue),
     totals,
-    emptyMessage: 'No ETF holdings yet. Choose Add entry and buy VOO, QQQM, SPYL or SMH.',
+    emptyMessage: 'No ETF holdings yet. Choose Add entry and buy VOO, QQQM, SMH or SSO.',
   });
 }

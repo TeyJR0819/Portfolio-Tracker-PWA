@@ -32,13 +32,13 @@ test('quotes and exchange rates come from Yahoo Finance', async () => {
 
 test('London prices in pence are converted to pounds and get a GBP rate', async () => {
   const { fetchImpl } = createFetch((url) => {
-    if (url.includes('/SPYL.L')) return yahooAnswer(5000, 'GBp');
+    if (url.includes('/VUSA.L')) return yahooAnswer(5000, 'GBp');
     if (url.includes('GBPMYR=X')) return yahooAnswer(5.6, 'MYR');
     if (url.includes('USDMYR=X')) return yahooAnswer(4.2, 'MYR');
     throw new Error('unexpected ' + url);
   });
-  const result = await getStockQuotes(['SPYL.L'], { fetchImpl });
-  assert.deepEqual(result.quotes['SPYL.L'], { price: 50, currency: 'GBP', source: 'yahoo' });
+  const result = await getStockQuotes(['VUSA.L'], { fetchImpl });
+  assert.deepEqual(result.quotes['VUSA.L'], { price: 50, currency: 'GBP', source: 'yahoo' });
   assert.equal(result.fx.GBP, 5.6);
 });
 
