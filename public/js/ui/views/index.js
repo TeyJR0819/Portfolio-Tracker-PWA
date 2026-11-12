@@ -2,6 +2,7 @@
 // To add a tab: write a view file, add its panel and button in index.html, then list it here.
 
 import { renderCashView } from './cash-view.js';
+import { renderChartView } from './chart-view.js';
 import { renderCryptoView } from './crypto-view.js';
 import { renderMmfView } from './mmf-view.js';
 import { renderStocksView } from './stocks-view.js';
@@ -14,5 +15,6 @@ export const VIEWS = Object.freeze({
   stocks: renderStocksView,
   mmf: renderMmfView,
   crypto: renderCryptoView,
+  chart: renderChartView,
   transactions: renderTransactionsView,
 });

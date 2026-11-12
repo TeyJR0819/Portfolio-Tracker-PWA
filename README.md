@@ -4,7 +4,7 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 
 ## Features
 
-- Six tabs: Summary, Cash, Stocks, MMF, Crypto and Transactions.
+- Seven tabs: Summary, Cash, Stocks, MMF, Crypto, Chart and Transactions.
 - A switch in the header shows every amount in RM or in USD.
 - Live MYR prices, cached for 120 seconds, with fallback to the last known price and then to average cost.
   - Crypto: CoinGecko.
@@ -14,6 +14,7 @@ A private, mobile-first dashboard for an investment portfolio valued in Malaysia
 - One "Add entry" form for every kind of entry (see Entries below), with optional fees and a note.
 - Weighted-average cost, realised profit or loss, and the cost per unit calculated from the amount paid.
 - A Transactions page that lists every entry.
+- A Chart tab with candlesticks, indicators and drawing tools (see Chart tab below).
 - First-time setup wizard, PIN lock screen, CSV export and offline app shell.
 
 ## Project structure
@@ -36,6 +37,7 @@ public/                 The website. Cloudflare serves this folder as static fil
       views/            One file per tab
 src/worker.js           Cloudflare Worker entry point (routes /api/*)
 src/stocks.js           Stock quotes and exchange rates (Yahoo Finance, Finnhub)
+src/candles.js          Candles and asset search for the Chart tab (Yahoo Finance, CoinGecko)
 src/brokers/            Scheduled read-only sync of broker balances and trades (Luno, Pionex, IBKR)
 src/ledger-sync.js      Records new broker trades in the ledger and sets Luno and Pionex cash
 src/trade-import.js     Turns broker trades into ledger entries (pure logic)
@@ -110,6 +112,22 @@ GitHub Pages cannot run the stock endpoint. Use the Cloudflare address.
 
 - **iPhone (Safari):** open the address, tap **Share**, then **Add to Home Screen**.
 - **Android (Chrome):** open the address, tap the menu, then **Install app**.
+
+## Chart tab
+
+The Chart tab shows a candlestick chart for any stock, ETF or coin, built with TradingView's open-source Lightweight Charts library.
+
+- **Search.** Type a name or ticker (for example `apple`, `VOO` or `sui`). Your holdings are shown as buttons above the chart. The star button adds the open asset to your watchlist.
+- **USD or MYR.** The USD and MYR switch in the chart toolbar converts every candle with the exchange rate of its own time. It is separate from the RM and USD switch in the header.
+- **Timeframes.** 1m, 5m, 15m, 1h, 4h, 1D and 1W. The chart refreshes every minute.
+- **Indicators.** The sliders button opens the list: Volume, RSI, SMA, EMA, Bollinger Bands and MACD. RSI and MACD get their own panes below the candles. SMA, EMA, Bollinger and RSI have an adjustable period.
+- **Drawing tools.** Trend line, ray, support or resistance line, zone, and Fibonacci retracement. Drag on the chart, or click twice. Click a line to select it, then drag it or its end points, change its colour, or press Delete. The magnet button snaps points to the open, high, low or close of the nearest candle.
+- **Saved drawings.** Drawings are saved for each asset and each currency (a price level in USD is not a price level in MYR). They are stored in Supabase, so they follow you to other devices, with a copy on the device.
+- **Average cost.** For an asset you hold, a dashed line shows your average cost in the chart currency.
+
+To save drawings and the watchlist online, run `sql/chart-state.sql` in the Supabase SQL Editor (replace `PASTE-YOUR-USER-ID-HERE` with your User UID, as for the other scripts). Without it, they are kept on the device only.
+
+Data comes from Yahoo Finance through the Worker routes `/api/candles` and `/api/chart-search`. CoinGecko finds coins by name and is the backup candle source for a coin Yahoo does not carry. CoinGecko candles are coarser (30 minutes, 4 hours or 4 days), and the chart says so. The optional secret `COINGECKO_API_KEY` (a free demo key) raises the CoinGecko rate limit.
 
 ## Transactions table
 
@@ -315,6 +333,7 @@ openssl dgst -sha384 -binary <file> | openssl base64 -A
 | "Supabase rejected the anon key" | Use **Reset credentials** on the lock screen and enter the key again. |
 | A price shows as an estimate | The price service has no price for that asset. It is valued at average cost. Check `coinId` or `stockSymbol` in `public/js/config.js`. |
 | "Stock prices: status 404" | The site is not running on Cloudflare, or `src/worker.js` was not deployed. |
+| "Candles could not be loaded" | Yahoo Finance or CoinGecko refused the request. Try another timeframe, wait a minute, or add the `COINGECKO_API_KEY` secret for coins. |
 | "Stock prices: status 502" | Yahoo Finance refused the request. Add the `FINNHUB_API_KEY` secret as a backup, or try again later. |
 | "The USD to RM rate is not available" | Press Refresh on the dashboard and try again. |
 | SPYL has no price | `SPYL.L` is the London listing. If you hold a different listing, change `stockSymbol` for SPYL in `public/js/config.js`. |

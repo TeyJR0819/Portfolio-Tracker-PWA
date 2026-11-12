@@ -100,3 +100,26 @@ export function createEmptyPosition(broker, assetName) {
     realisedPl: 0,
   };
 }
+
+// The assets that have a price chart, in the shape the Chart tab uses.
+// id: what a drawing is saved under. symbol: Yahoo Finance symbol. coin: CoinGecko id (backup for crypto).
+export function getChartItems() {
+  return ASSET_CATALOG.filter((entry) => entry.coinId || entry.stockSymbol).map((entry) => {
+    const symbol = entry.chartSymbol ?? entry.stockSymbol ?? '';
+    return {
+      id: symbol || `cg:${entry.coinId}`,
+      symbol,
+      coin: entry.coinId ?? '',
+      ticker: entry.asset,
+      name: entry.asset,
+      type: entry.category === 'Crypto' ? 'Crypto' : 'ETF',
+      asset: entry.asset,
+    };
+  });
+}
+
+// Which catalog asset is this chart item, if any? Used to show the average cost on the chart.
+export function findAssetForChartItem(item) {
+  const match = getChartItems().find((entry) => entry.id === item.id || (item.coin && entry.coin === item.coin) || (item.symbol && entry.symbol === item.symbol));
+  return match ? match.asset : null;
+}

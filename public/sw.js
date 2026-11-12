@@ -3,7 +3,7 @@
 // To release an update: change CACHE_VERSION below. Phones then fetch fresh files.
 // Live data (Supabase and CoinGecko) is never cached here; the app handles that itself.
 
-const CACHE_VERSION = 'v16';
+const CACHE_VERSION = 'v17';
 const CACHE_NAME = `portfolio-shell-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -13,26 +13,35 @@ const APP_FILES = [
   './css/base.css',
   './css/layout.css',
   './css/components.css',
+  './css/chart.css',
   './css/animations.css',
   './js/main.js',
   './js/config.js',
   './js/state.js',
   './js/logic/calculations.js',
   './js/logic/catalog.js',
+  './js/logic/chart-drawings.js',
+  './js/logic/chart-time.js',
   './js/logic/export-csv.js',
   './js/logic/format.js',
+  './js/logic/indicators.js',
   './js/logic/ledger.js',
   './js/logic/quotes.js',
   './js/logic/reconcile.js',
   './js/logic/rows.js',
   './js/services/app-config.js',
   './js/services/auth.js',
+  './js/services/chart-data.js',
+  './js/services/chart-store.js',
   './js/services/database.js',
   './js/services/prices.js',
   './js/services/service-worker-registration.js',
   './js/services/storage.js',
   './js/ui/animations.js',
   './js/ui/charts.js',
+  './js/ui/chart/chart-engine.js',
+  './js/ui/chart/drawing-controller.js',
+  './js/ui/chart/drawing-primitive.js',
   './js/ui/currency-toggle.js',
   './js/ui/columns.js',
   './js/ui/dom.js',
@@ -50,6 +59,7 @@ const APP_FILES = [
   './js/ui/views/index.js',
   './js/ui/views/summary-view.js',
   './js/ui/views/cash-view.js',
+  './js/ui/views/chart-view.js',
   './js/ui/views/stocks-view.js',
   './js/ui/views/transactions-view.js',
   './js/ui/views/mmf-view.js',

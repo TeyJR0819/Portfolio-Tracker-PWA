@@ -2,6 +2,7 @@
 // Static files in public/ are served by Cloudflare directly. Only /api/* requests reach this code.
 
 import { runBrokerSync } from './brokers/sync.js';
+import { handleCandlesRequest, handleChartSearchRequest } from './candles.js';
 import { dispatchPionexWorkflow } from './github-dispatch.js';
 import { runLedgerSync } from './ledger-sync.js';
 import { handleStocksRequest } from './stocks.js';
@@ -26,6 +27,12 @@ export default {
 
     if (pathname === '/api/stocks' && request.method === 'GET') {
       return handleStocksRequest({ request, env });
+    }
+    if (pathname === '/api/candles' && request.method === 'GET') {
+      return handleCandlesRequest({ request, env });
+    }
+    if (pathname === '/api/chart-search' && request.method === 'GET') {
+      return handleChartSearchRequest({ request, env });
     }
     if (pathname === '/api/config' && request.method === 'GET') {
       return handleConfigRequest(env);

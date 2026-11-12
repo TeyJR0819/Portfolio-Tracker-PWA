@@ -1,7 +1,7 @@
 // All communication with Supabase lives in this file.
 // Database columns use snake_case; the rest of the app uses camelCase (see logic/rows.js).
 
-import { BROKER_BALANCES_TABLE, BROKER_SYNC_STATUS_TABLE, DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
+import { BROKER_BALANCES_TABLE, BROKER_SYNC_STATUS_TABLE, CHART_STATE_TABLE, DATABASE_TABLE, STORAGE_KEYS, TRANSACTIONS_LIMIT, TRANSACTIONS_TABLE } from '../config.js';
 import { toDatabaseRow, toNumber, toPosition, toTransaction, toTransactionRow } from '../logic/rows.js';
 import { localStore } from './storage.js';
 
@@ -292,4 +292,21 @@ export async function saveEntry({ changes, record }) {
   } catch (error) {
     return { positions, transaction: null, logError: describeTransactionsError(error) };
   }
+}
+
+// ---------- Chart drawings and watchlist ----------
+// One row per key in the chart_state table (see sql/chart-state.sql). The value is JSON.
+
+// Returns the saved value, or null when nothing is saved under this key.
+export async function loadChartValue(key) {
+  const { data, error } = await getClient().from(CHART_STATE_TABLE).select('value').eq('key', key).maybeSingle();
+  if (error) throw toFailure(error);
+  return data ? data.value : null;
+}
+
+export async function saveChartValue(key, value) {
+  const { error } = await getClient()
+    .from(CHART_STATE_TABLE)
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) throw toFailure(error);
 }

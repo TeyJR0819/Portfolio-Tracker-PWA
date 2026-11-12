@@ -1,0 +1,436 @@
+/* The Chart tab: search, timeframes, drawing tools and the candlestick chart. */
+
+.chart-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.chart-card.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  align-content: start;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  border-radius: 0;
+  padding: calc(var(--space-3) + var(--safe-top)) var(--space-3) calc(var(--space-3) + var(--safe-bottom));
+  overflow: auto;
+}
+
+/* Top row: search, currency and buttons */
+.chart-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chart-search {
+  position: relative;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.chart-search input,
+.chart-indicator-row input[type='number'] {
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-small);
+}
+
+.chart-search input:focus-visible,
+.chart-indicator-row input[type='number']:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.chart-search-results {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 18rem;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-raised);
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+}
+
+.chart-result {
+  display: grid;
+  grid-template-columns: minmax(3.5rem, auto) minmax(0, 1fr);
+  gap: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.chart-result:hover,
+.chart-result[aria-selected='true'] {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.chart-result-ticker {
+  grid-row: span 2;
+  align-self: center;
+}
+
+.chart-result-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+}
+
+.chart-result-meta,
+.chart-result-message {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.chart-result-message {
+  padding: var(--space-3);
+}
+
+/* Groups of buttons that act like a switch (currency and timeframe) */
+.chart-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+}
+
+.chart-segmented button {
+  min-height: 2.25rem;
+  min-width: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: calc(var(--radius-medium) - 2px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.chart-segmented button:hover {
+  color: var(--color-text);
+}
+
+.chart-segmented button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+.chart-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.chart-icon-button:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+}
+
+.chart-icon-button[aria-pressed='true'],
+.chart-icon-button[aria-expanded='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.chart-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chart-icon-button:focus-visible,
+.chart-segmented button:focus-visible,
+.chart-chip-button:focus-visible,
+.chart-swatch:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+/* Holdings and watchlist */
+.chart-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  scrollbar-width: thin;
+}
+
+.chart-chip-title {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chart-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+}
+
+.chart-chip-button,
+.chart-chip-remove {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.chart-chip-button {
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+}
+
+.chart-chip-button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-text);
+}
+
+.chart-chip-remove {
+  min-height: 2rem;
+  padding: 0 var(--space-2) 0 0;
+}
+
+.chart-chip-remove:hover {
+  color: var(--color-negative);
+}
+
+/* Indicator list */
+.chart-indicators {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+}
+
+.chart-indicators[hidden] {
+  display: none;
+}
+
+.chart-indicator-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.chart-indicator-row input[type='number'] {
+  width: 4.5rem;
+  min-height: 2.25rem;
+}
+
+.chart-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  font-size: var(--text-small);
+}
+
+.chart-check input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--color-accent);
+}
+
+/* Tools beside the chart */
+.chart-workspace {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+.chart-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+  align-self: start;
+}
+
+.chart-tools .chart-icon-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-color: transparent;
+}
+
+.chart-tools-divider {
+  width: 1.6rem;
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--color-border);
+}
+
+.chart-swatch {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.chart-swatch[aria-pressed='true'] {
+  border-color: var(--color-text);
+}
+
+.chart-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.chart-canvas {
+  height: clamp(22rem, 68vh, 44rem);
+}
+
+.chart-card.is-fullscreen .chart-workspace,
+.chart-card.is-fullscreen .chart-stage {
+  height: 100%;
+}
+
+.chart-card.is-fullscreen .chart-canvas {
+  height: 100%;
+}
+
+.chart-canvas.is-tool-active {
+  cursor: crosshair;
+}
+
+.chart-canvas.is-over-drawing {
+  cursor: pointer;
+}
+
+/* While a tool is on or a line is selected, a finger drags the line, not the page. */
+.chart-canvas.is-editing,
+.chart-canvas.is-editing * {
+  touch-action: none;
+}
+
+.chart-legend {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-3);
+  right: 4.5rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.chart-legend-name {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.chart-legend .is-positive {
+  color: var(--color-positive);
+}
+
+.chart-legend .is-negative {
+  color: var(--color-negative);
+}
+
+.chart-legend-indicator {
+  color: var(--color-accent);
+}
+
+.chart-message {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.chart-message[hidden] {
+  display: none;
+}
+
+.chart-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+
+@media (max-width: 40rem) {
+  .chart-card {
+    padding: var(--space-2);
+  }
+
+  .chart-canvas {
+    height: clamp(20rem, 62vh, 36rem);
+  }
+}
+
+/* The TradingView attribution logo that Lightweight Charts adds. The library normally injects this style itself,
+   but the app's Content Security Policy blocks injected styles, so the same rules live here. */
+a#tv-attr-logo {
+  --fill: #d1d4dc;
+  --stroke: #131722;
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  width: 35px;
+  height: 19px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

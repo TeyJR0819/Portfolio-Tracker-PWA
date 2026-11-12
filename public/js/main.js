@@ -48,6 +48,7 @@ import {
 import { initTabs } from './ui/tabs.js';
 import { showToast } from './ui/toast.js';
 import { VIEWS } from './ui/views/index.js';
+import { disposeChartView, initChartView } from './ui/views/chart-view.js';
 import { initTransactionsView } from './ui/views/transactions-view.js';
 
 let lockScreen = null;
@@ -174,6 +175,7 @@ function lockDashboard() {
   stopAutoRefresh();
   endSession();
   destroyAllCharts();
+  disposeChartView();
   resetState();
   byId('app').hidden = true;
   lockScreen.show();
@@ -234,7 +236,7 @@ function handleActionClick(event) {
 async function boot() {
   registerServiceWorker();
 
-  if (!window.Chart || !window.supabase) {
+  if (!window.Chart || !window.supabase || !window.LightweightCharts) {
     showFatalError(
       'A required library did not load. Check your internet connection and reload the page. If it keeps failing, see the Troubleshooting section of the README.',
     );
@@ -248,12 +250,14 @@ async function boot() {
   tabs = initTabs({
     onChange: (name) => {
       destroyAllCharts();
+      if (name !== 'chart') disposeChartView();
       updateState({ activeTab: name });
     },
   });
 
   initCurrencyToggle({ onChange: changeDisplayCurrency });
   initTransactionsView({ onFilter: render });
+  initChartView();
   updateState({ displayCurrency: localStore.getText(STORAGE_KEYS.displayCurrency) === 'USD' ? 'USD' : 'MYR' });
 
   subscribe(render);

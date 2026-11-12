@@ -7,6 +7,8 @@ export const STORAGE_KEYS = Object.freeze({
   priceCache: 'portfolio.priceCache',
   positionsSnapshot: 'portfolio.positionsSnapshot',
   displayCurrency: 'portfolio.displayCurrency',
+  chartSettings: 'portfolio.chart.settings',
+  chartPrefix: 'portfolio.chart.', // Saved copy of the drawings and watchlist on this device.
   authSession: 'portfolio.auth', // The Supabase sign-in session. Supabase writes it, we only clear it.
 });
 
@@ -14,6 +16,7 @@ export const DATABASE_TABLE = 'portfolio';
 export const TRANSACTIONS_TABLE = 'transactions';
 export const TRANSACTIONS_LIMIT = 5000;
 export const DISPLAY_TIME_ZONE = 'Asia/Kuala_Lumpur'; // Decides the date written on an imported trade.
+export const CHART_STATE_TABLE = 'chart_state'; // Drawings and the watchlist, one row per key.
 export const BROKER_BALANCES_TABLE = 'broker_balances'; // Written only by the Cloudflare Worker.
 export const BROKER_SYNC_STATUS_TABLE = 'broker_sync_status';
 
@@ -21,6 +24,10 @@ export const PRICE_API_URL = 'https://api.coingecko.com/api/v3/simple/price';
 export const PRICE_CURRENCY = 'myr';
 // Stock quotes come from our own Cloudflare function (Yahoo Finance, with Finnhub as a backup).
 export const STOCK_API_PATH = './api/stocks';
+// Candles and asset search for the Chart tab (Yahoo Finance and CoinGecko, through our Cloudflare function).
+export const CANDLES_API_PATH = './api/candles';
+export const CHART_SEARCH_API_PATH = './api/chart-search';
+export const CHART_REFRESH_MS = 60000;
 // Public Supabase details supplied by the Worker, so visitors only choose a PIN and sign in.
 export const CONFIG_API_PATH = './api/config';
 export const USDT_COIN_ID = 'tether'; // Gives the USDT to RM rate used for Pionex.
@@ -52,13 +59,14 @@ export const FALLBACK_COLORS = Object.freeze(['#94A3B8', '#F472B6', '#FACC15', '
 //   brokers    : where the asset can be held
 //   coinId     : CoinGecko identifier (crypto)
 //   stockSymbol: Yahoo Finance symbol (stocks and ETFs)
+//   chartSymbol: Yahoo Finance symbol for the candle chart (crypto). A coin without one uses CoinGecko candles.
 //   fixedPrice : price in RM that never changes (RM cash and money market funds)
 //   priceCurrency: the balance is held in this currency (USD or USDT), so its price is the exchange rate
 export const ASSET_CATALOG = Object.freeze([
-  { asset: 'BTC', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'bitcoin', color: '#F59E0B' },
-  { asset: 'ETH', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'ethereum', color: '#8B5CF6' },
-  { asset: 'ADA', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'cardano', color: '#10B981' },
-  { asset: 'LINK', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'chainlink', color: '#2563EB' },
+  { asset: 'BTC', category: 'Crypto', brokers: ['Luno', 'Pionex'], chartSymbol: 'BTC-USD', coinId: 'bitcoin', color: '#F59E0B' },
+  { asset: 'ETH', category: 'Crypto', brokers: ['Luno', 'Pionex'], chartSymbol: 'ETH-USD', coinId: 'ethereum', color: '#8B5CF6' },
+  { asset: 'ADA', category: 'Crypto', brokers: ['Luno', 'Pionex'], chartSymbol: 'ADA-USD', coinId: 'cardano', color: '#10B981' },
+  { asset: 'LINK', category: 'Crypto', brokers: ['Luno', 'Pionex'], chartSymbol: 'LINK-USD', coinId: 'chainlink', color: '#2563EB' },
   { asset: 'SUI', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'sui', color: '#06B6D4' },
   { asset: 'TON', category: 'Crypto', brokers: ['Luno', 'Pionex'], coinId: 'the-open-network', color: '#EC4899' },
   { asset: 'Bank Cash', category: 'Cash', brokers: ['Bank'], fixedPrice: 1, color: '#059669' },

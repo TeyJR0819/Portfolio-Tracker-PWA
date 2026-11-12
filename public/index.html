@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="./css/base.css" />
     <link rel="stylesheet" href="./css/layout.css" />
     <link rel="stylesheet" href="./css/components.css" />
+    <link rel="stylesheet" href="./css/chart.css" />
     <link rel="stylesheet" href="./css/animations.css" />
 
     <!-- Libraries. Pinned versions with integrity hashes. See README to update them. -->
@@ -41,6 +42,12 @@
       integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK"
       crossorigin="anonymous"
     ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.3.0/dist/lightweight-charts.standalone.production.js"
+      integrity="sha384-qGyrXqhWsMe1Lr86L5fJi0yolgjPNWh66KdDZpqJs28GQzwhNfqrIi26VP6NJ0EP"
+      crossorigin="anonymous"
+    ></script>
     <script type="module" src="./js/main.js"></script>
   </head>
 
@@ -53,6 +60,18 @@
       <symbol id="icon-mmf" viewBox="0 0 24 24"><path d="M12 3.5l9 4.8-9 4.8-9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8"/><path d="M3 16.5l9 4.8 9-4.8"/></symbol>
       <symbol id="icon-crypto" viewBox="0 0 24 24"><path d="M12 2.8l8 4.6v9.2l-8 4.6-8-4.6V7.4z"/><path d="M9.5 9.5h4a1.7 1.7 0 010 3.4h-4m0 0h4.4a1.8 1.8 0 010 3.6H9.5M9.5 9.5v7M11.5 8v1.5M11.5 16.5V18"/></symbol>
       <symbol id="icon-list" viewBox="0 0 24 24"><path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><path d="M4.5 6.5v.01M4.5 12v.01M4.5 17.5v.01"/></symbol>
+      <symbol id="icon-candles" viewBox="0 0 24 24"><path d="M7 3.5v3M7 15.5v3M17 6.5v3M17 17.5v3"/><rect x="4.75" y="6.5" width="4.5" height="9" rx="1"/><rect x="14.75" y="9.5" width="4.5" height="8" rx="1"/></symbol>
+      <symbol id="icon-cursor" viewBox="0 0 24 24"><path d="M6 4l12 7.2-5.2 1.4L10.5 18z"/></symbol>
+      <symbol id="icon-trend" viewBox="0 0 24 24"><path d="M5 18L19 6"/><circle cx="5" cy="18" r="1.8"/><circle cx="19" cy="6" r="1.8"/></symbol>
+      <symbol id="icon-ray" viewBox="0 0 24 24"><path d="M5 17L21 8"/><circle cx="5" cy="17" r="1.8"/><path d="M17 5.5l4 2.5-4.5 1.5"/></symbol>
+      <symbol id="icon-hline" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M12 6v-2M12 20v-2" opacity="0.5"/></symbol>
+      <symbol id="icon-rect" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="10" rx="1.5"/></symbol>
+      <symbol id="icon-fib" viewBox="0 0 24 24"><path d="M4 5h16M4 10h16M4 14h16M4 19h16"/></symbol>
+      <symbol id="icon-magnet" viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0012 0V4h-4v8a2 2 0 01-4 0V4z"/><path d="M6 8h4M14 8h4"/></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M5 7h14M9.5 7V5h5v2M7 7l1 12h8l1-12M10 11v5M14 11v5"/></symbol>
+      <symbol id="icon-star" viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.7-4.8 2.7 1-5.4-4-3.8 5.4-.7z"/></symbol>
+      <symbol id="icon-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+      <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M5 9V5h4M19 9V5h-4M5 15v4h4M19 15v4h-4"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 00-14.3-4.5L4 8.5"/><path d="M4 4v4.5h4.5"/><path d="M4 13a8 8 0 0014.3 4.5L20 15.5"/><path d="M20 20v-4.5h-4.5"/></symbol>
       <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7.5 11L12 15.5 16.5 11"/><path d="M4.5 19.5h15"/></symbol>
       <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></symbol>
@@ -80,7 +99,7 @@
         <div class="top-actions">
           <div class="currency-toggle" id="currency-toggle" role="group" aria-label="Display currency">
             <button type="button" data-currency="MYR" aria-pressed="true">RM</button>
-            <button type="button" data-currency="USD" aria-pressed="false">USD</button>
+            <button type="button" data-chart-currency="USD" aria-pressed="false">USD</button>
           </div>
           <button class="button button-quiet" type="button" data-action="refresh" aria-label="Refresh prices" title="Refresh prices">
             <svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
@@ -117,6 +136,9 @@
           </button>
           <button class="tab-button" type="button" role="tab" id="tab-crypto" data-tab="crypto" aria-selected="false" tabindex="-1" aria-controls="panel-crypto">
             <svg class="icon" aria-hidden="true"><use href="#icon-crypto"></use></svg><span>Crypto</span>
+          </button>
+          <button class="tab-button" type="button" role="tab" id="tab-chart" data-tab="chart" aria-selected="false" tabindex="-1" aria-controls="panel-chart">
+            <svg class="icon" aria-hidden="true"><use href="#icon-candles"></use></svg><span>Chart</span>
           </button>
           <button class="tab-button" type="button" role="tab" id="tab-transactions" data-tab="transactions" aria-selected="false" tabindex="-1" aria-controls="panel-transactions">
             <svg class="icon" aria-hidden="true"><use href="#icon-list"></use></svg><span>Transactions</span>
@@ -333,6 +355,100 @@
             <h3 class="card-title">Asset details</h3>
             <div class="table-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             <div class="table-scroll"><table class="data-table" id="table-crypto"></table></div>
+          </article>
+        </section>
+
+        <!-- Chart -->
+        <section class="tab-panel" id="panel-chart" role="tabpanel" aria-labelledby="tab-chart" data-panel="chart" hidden>
+          <article class="card chart-card" id="chart-card">
+            <div class="chart-topbar">
+              <div class="chart-search">
+                <label class="visually-hidden" for="chart-search-input">Search stocks, ETFs and coins</label>
+                <input id="chart-search-input" type="search" placeholder="Search stocks, ETFs and coins" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="chart-search-results" />
+                <ul class="chart-search-results" id="chart-search-results" role="listbox" hidden></ul>
+              </div>
+              <div class="chart-segmented" id="chart-currency" role="group" aria-label="Chart currency">
+                <button type="button" data-chart-currency="USD" aria-pressed="false">USD</button>
+                <button type="button" data-chart-currency="MYR" aria-pressed="false">MYR</button>
+              </div>
+              <button class="chart-icon-button" type="button" id="chart-watch-toggle" aria-pressed="false" aria-label="Watchlist" title="Add to watchlist">
+                <svg class="icon" aria-hidden="true"><use href="#icon-star"></use></svg>
+              </button>
+              <button class="chart-icon-button" type="button" id="chart-indicators-toggle" aria-expanded="false" aria-controls="chart-indicators-panel" aria-label="Indicators" title="Indicators">
+                <svg class="icon" aria-hidden="true"><use href="#icon-sliders"></use></svg>
+              </button>
+              <button class="chart-icon-button" type="button" id="chart-fullscreen" aria-pressed="false" aria-label="Full screen" title="Full screen">
+                <svg class="icon" aria-hidden="true"><use href="#icon-expand"></use></svg>
+              </button>
+            </div>
+
+            <div class="chart-chips" id="chart-chips"></div>
+            <div class="chart-segmented" id="chart-intervals" role="group" aria-label="Timeframe"></div>
+
+            <div class="chart-indicators" id="chart-indicators-panel" hidden>
+              <label class="chart-check"><input type="checkbox" data-indicator="volume" /> Volume</label>
+              <div class="chart-indicator-row">
+                <label class="chart-check"><input type="checkbox" data-indicator="rsi" /> RSI</label>
+                <input type="number" data-period="rsi" min="2" max="400" step="1" aria-label="RSI period" />
+              </div>
+              <div class="chart-indicator-row">
+                <label class="chart-check"><input type="checkbox" data-indicator="sma" /> SMA</label>
+                <input type="number" data-period="sma" min="2" max="400" step="1" aria-label="SMA period" />
+              </div>
+              <div class="chart-indicator-row">
+                <label class="chart-check"><input type="checkbox" data-indicator="ema" /> EMA</label>
+                <input type="number" data-period="ema" min="2" max="400" step="1" aria-label="EMA period" />
+              </div>
+              <div class="chart-indicator-row">
+                <label class="chart-check"><input type="checkbox" data-indicator="bollinger" /> Bollinger Bands</label>
+                <input type="number" data-period="bollinger" min="2" max="400" step="1" aria-label="Bollinger Bands period" />
+              </div>
+              <label class="chart-check"><input type="checkbox" data-indicator="macd" /> MACD (12, 26, 9)</label>
+            </div>
+
+            <div class="chart-workspace">
+              <div class="chart-tools" id="chart-tools" role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
+                <button class="chart-icon-button" type="button" data-tool="trend" aria-pressed="false" aria-label="Trend line" title="Trend line">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-trend"></use></svg>
+                </button>
+                <button class="chart-icon-button" type="button" data-tool="ray" aria-pressed="false" aria-label="Ray" title="Ray">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-ray"></use></svg>
+                </button>
+                <button class="chart-icon-button" type="button" data-tool="hline" aria-pressed="false" aria-label="Support or resistance line" title="Support or resistance line">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-hline"></use></svg>
+                </button>
+                <button class="chart-icon-button" type="button" data-tool="rect" aria-pressed="false" aria-label="Zone" title="Zone (rectangle)">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-rect"></use></svg>
+                </button>
+                <button class="chart-icon-button" type="button" data-tool="fib" aria-pressed="false" aria-label="Fibonacci retracement" title="Fibonacci retracement">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-fib"></use></svg>
+                </button>
+                <span class="chart-tools-divider" aria-hidden="true"></span>
+                <button class="chart-icon-button" type="button" data-chart-action="magnet" aria-pressed="false" aria-label="Snap to candle prices" title="Snap to candle prices">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-magnet"></use></svg>
+                </button>
+                <div id="chart-swatches" class="chart-tools" role="group" aria-label="Line colour"></div>
+                <span class="chart-tools-divider" aria-hidden="true"></span>
+                <button class="chart-icon-button" type="button" id="chart-delete" data-chart-action="delete" aria-label="Delete selected drawing" title="Delete selected drawing" disabled>
+                  <svg class="icon" aria-hidden="true"><use href="#icon-trash"></use></svg>
+                </button>
+                <button class="chart-icon-button" type="button" data-chart-action="clear" aria-label="Delete all drawings on this asset" title="Delete all drawings on this asset">
+                  <svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+                </button>
+              </div>
+
+              <div class="chart-stage">
+                <div class="chart-legend" id="chart-legend" aria-live="off"></div>
+                <div class="chart-canvas" id="chart-canvas"></div>
+                <div class="chart-message" id="chart-message" role="status" hidden>
+                  <p id="chart-message-text"></p>
+                  <button class="button button-primary" type="button" id="chart-retry" hidden>Try again</button>
+                </div>
+              </div>
+            </div>
+
+            <p class="chart-hint" id="chart-hint"></p>
+            <p class="chart-hint" id="chart-data-note"></p>
           </article>
         </section>
 
