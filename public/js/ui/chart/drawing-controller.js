@@ -1,4 +1,4 @@
-// Lets the person draw, select, move, recolour and delete support, resistance and trend lines.
+// Lets the person draw, select, move, recolour and delete support, resistance, trend lines, zones, Fibonacci levels and rulers.
 //
 // How a mouse or finger is handled:
 //   pointerdown  decides who owns the gesture. If a drawing tool is on, or a drawing lies under the pointer,
@@ -15,6 +15,7 @@ const CLICK_DISTANCE = 6;
 export function createDrawingController({ container, engine, onChange, onToolDone, onSelectionChange }) {
   const primitive = new DrawingsPrimitive({
     project: engine.project,
+    countBars: engine.countBars,
     textColor: readCssVariable('--color-text'),
     surfaceColor: readCssVariable('--color-surface'),
     fontFamily: readCssVariable('--font-sans'),
@@ -23,7 +24,7 @@ export function createDrawingController({ container, engine, onChange, onToolDon
 
   let drawings = [];
   let selectedId = null;
-  let tool = null; // 'trend', 'ray', 'hline', 'rect', 'fib' or null for the normal pointer
+  let tool = null; // 'trend', 'ray', 'hline', 'rect', 'fib', 'ruler' or null for the normal pointer
   let color = '#d9b26f';
   let magnet = false;
   let draft = null; // a drawing being placed: { id: 'draft', type, color, points }

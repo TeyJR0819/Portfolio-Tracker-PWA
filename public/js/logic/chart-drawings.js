@@ -8,8 +8,9 @@
 //   type "hline"  one point, a horizontal line across the chart (support or resistance)
 //   type "rect"   two points, a box (a zone)
 //   type "fib"    two points, Fibonacci retracement levels
+//   type "ruler"  two points, a box with the price change, percentage, candle count and time between them
 
-export const DRAWING_TYPES = Object.freeze(['trend', 'ray', 'hline', 'rect', 'fib']);
+export const DRAWING_TYPES = Object.freeze(['trend', 'ray', 'hline', 'rect', 'fib', 'ruler']);
 export const FIB_LEVELS = Object.freeze([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
 export const DRAWING_COLORS = Object.freeze(['#d9b26f', '#60a5fa', '#34d399', '#f87171', '#c084fc', '#e9eef6']);
 export const MAX_DRAWINGS = 200;
@@ -84,6 +85,12 @@ export function buildShape(drawing, project, width) {
       return { handles: points, segments: [], box };
     }
 
+    case 'ruler': {
+      const [a, b] = points;
+      const box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+      return { handles: points, segments: [[a.x, a.y, b.x, b.y]], box };
+    }
+
     case 'fib': {
       const [a, b] = points;
       const left = Math.min(a.x, b.x);
@@ -100,6 +107,27 @@ export function buildShape(drawing, project, width) {
     default:
       return { handles: [], segments: [], box: null };
   }
+}
+
+// Measures the distance between the two points of a ruler.
+// bars: the number of candles between the points (the chart counts them, because only it knows the candle times).
+// Returns { change, percent, bars, seconds }. The change and percentage are signed: positive when the second point is higher.
+export function measureRuler(first, second, bars) {
+  const change = second.price - first.price;
+  const percent = first.price === 0 ? 0 : (change / Math.abs(first.price)) * 100;
+  return { change, percent, bars, seconds: Math.abs(second.time - first.time) };
+}
+
+// Writes a length of time in the two largest units that apply, for example "3d 4h", "2h 30m" or "45m".
+export function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${total}s`;
 }
 
 export function distanceToSegment(px, py, [x1, y1, x2, y2]) {

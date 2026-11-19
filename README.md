@@ -121,7 +121,7 @@ The Chart tab shows a candlestick chart for any stock, ETF or coin, built with T
 - **USD or MYR.** The USD and MYR switch in the chart toolbar converts every candle with the exchange rate of its own time. It is separate from the RM and USD switch in the header.
 - **Timeframes.** 1m, 5m, 15m, 1h, 4h, 1D and 1W. The chart refreshes every minute.
 - **Indicators.** The sliders button opens the list: Volume, RSI, SMA, EMA, Bollinger Bands and MACD. RSI and MACD get their own panes below the candles. SMA, EMA, Bollinger and RSI have an adjustable period.
-- **Drawing tools.** Trend line, ray, support or resistance line, zone, and Fibonacci retracement. Drag on the chart, or click twice. Click a line to select it, then drag it or its end points, change its colour, or press Delete. The magnet button snaps points to the open, high, low or close of the nearest candle.
+- **Drawing tools.** Trend line, ray, support or resistance line, zone, Fibonacci retracement, and a ruler that shows the price change, percentage, number of candles and time between two points. Drag on the chart, or click twice. Click a line to select it, then drag it or its end points, change its colour, or press Delete. The magnet button snaps points to the open, high, low or close of the nearest candle.
 - **Saved drawings.** Drawings are saved for each asset and each currency (a price level in USD is not a price level in MYR). They are stored in Supabase, so they follow you to other devices, with a copy on the device.
 - **Average cost.** For an asset you hold, a dashed line shows your average cost in the chart currency.
 

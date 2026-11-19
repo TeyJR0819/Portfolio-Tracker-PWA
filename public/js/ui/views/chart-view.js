@@ -34,6 +34,7 @@ const TOOL_HINTS = Object.freeze({
   hline: 'Support or resistance: click the price level. Drag the line afterwards to adjust it.',
   rect: 'Zone: drag from one corner to the opposite corner, or click twice.',
   fib: 'Fibonacci retracement: drag from one swing to the other, or click twice.',
+  ruler: 'Ruler: drag from one point to another, or click twice, to measure the price change, percentage, candles and time.',
 });
 const DEFAULT_HINT = 'Drag to move the chart, scroll or pinch to zoom. Pick a tool on the left to draw. Select a line to move, recolour or delete it.';
 

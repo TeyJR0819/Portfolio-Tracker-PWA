@@ -2,7 +2,7 @@
 // It is a "series primitive" of Lightweight Charts: the library calls draw() whenever the chart repaints,
 // so the lines stay in place while the person zooms or scrolls.
 
-import { buildShape, FIB_LEVELS } from '../../logic/chart-drawings.js';
+import { buildShape, FIB_LEVELS, formatDuration, measureRuler } from '../../logic/chart-drawings.js';
 
 function withAlpha(hex, alpha) {
   const value = parseInt(hex.slice(1), 16);
@@ -10,8 +10,9 @@ function withAlpha(hex, alpha) {
 }
 
 export class DrawingsPrimitive {
-  constructor({ project, textColor, surfaceColor, fontFamily }) {
+  constructor({ project, countBars, textColor, surfaceColor, fontFamily }) {
     this.project = project; // (point) -> { x, y } in pixels
+    this.countBars = countBars; // (firstTime, secondTime) -> number of candles between them
     this.textColor = textColor;
     this.surfaceColor = surfaceColor;
     this.fontFamily = fontFamily;
@@ -90,6 +91,8 @@ export class DrawingsPrimitive {
       }
     }
 
+    if (drawing.type === 'ruler') this.drawRulerLabel(context, mediaSize, drawing, shape);
+
     if (drawing.type === 'hline') this.drawLabel(context, this.formatPrice(drawing.points[0].price), mediaSize.width - 6, shape.handles[0].y, drawing.color);
 
     context.setLineDash([]);
@@ -130,6 +133,41 @@ export class DrawingsPrimitive {
     context.moveTo(a.x, a.y);
     context.lineTo(b.x, b.y);
     context.stroke();
+  }
+
+  // Shows the measurement in a small box beside the second point.
+  drawRulerLabel(context, mediaSize, drawing, shape) {
+    const [first, second] = drawing.points;
+    const [a, b] = shape.handles;
+    const result = measureRuler(first, second, this.countBars(first.time, second.time));
+    const sign = result.change > 0 ? '+' : result.change < 0 ? '-' : '';
+    const lines = [
+      `${sign}${this.formatPrice(Math.abs(result.change))} (${sign}${Math.abs(result.percent).toFixed(2)}%)`,
+      `${result.bars} ${result.bars === 1 ? 'bar' : 'bars'}, ${formatDuration(result.seconds)}`,
+    ];
+
+    context.save();
+    context.setLineDash([]);
+    context.font = `11px ${this.fontFamily}`;
+    const lineHeight = 15;
+    const width = Math.max(...lines.map((text) => context.measureText(text).width)) + 16;
+    const height = lines.length * lineHeight + 8;
+    const centreX = (a.x + b.x) / 2;
+    // The label sits above the box when the price rose, and below it when the price fell.
+    const rising = result.change >= 0;
+    const top = rising ? Math.min(a.y, b.y) - height - 8 : Math.max(a.y, b.y) + 8;
+    const x = Math.max(4, Math.min(mediaSize.width - width - 4, centreX - width / 2));
+    const y = Math.max(4, Math.min(mediaSize.height - height - 4, top));
+
+    context.fillStyle = drawing.color;
+    context.beginPath();
+    context.roundRect(x, y, width, height, 4);
+    context.fill();
+    context.fillStyle = this.surfaceColor;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    lines.forEach((text, index) => context.fillText(text, x + width / 2, y + 4 + lineHeight * (index + 0.5)));
+    context.restore();
   }
 
   drawLabel(context, text, x, y, color, align = 'right') {

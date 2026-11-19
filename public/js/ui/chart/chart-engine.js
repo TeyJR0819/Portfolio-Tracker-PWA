@@ -344,6 +344,11 @@ export function createChartEngine(container, { legendElement }) {
     return { time: candle.time, price: best };
   }
 
+  // The number of candles between two times (used by the ruler).
+  function countBars(firstTime, secondTime) {
+    return Math.round(Math.abs(timeToPosition(times, secondTime) - timeToPosition(times, firstTime)));
+  }
+
   function mainPaneBounds() {
     return { width: chart.timeScale().width(), height: chart.panes()[0].getHeight() };
   }
@@ -352,5 +357,5 @@ export function createChartEngine(container, { legendElement }) {
     chart.remove();
   }
 
-  return { chart, candleSeries, setData, refreshData, setIndicators, setAverageCost, project, unproject, snap, mainPaneBounds, destroy, getCandleCount: () => candles.length };
+  return { chart, candleSeries, setData, refreshData, setIndicators, setAverageCost, project, unproject, snap, countBars, mainPaneBounds, destroy, getCandleCount: () => candles.length };
 }

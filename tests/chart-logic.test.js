@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { bollinger, ema, macd, rsi, sma } from '../public/js/logic/indicators.js';
 import { positionToTime, timeToPosition } from '../public/js/logic/chart-time.js';
-import { buildShape, distanceToSegment, hitTest, moveDrawing, sanitiseDrawings } from '../public/js/logic/chart-drawings.js';
+import { buildShape, distanceToSegment, formatDuration, hitTest, measureRuler, moveDrawing, sanitiseDrawings } from '../public/js/logic/chart-drawings.js';
 
 const close = (a, b, tolerance = 1e-6) => assert.ok(Math.abs(a - b) <= tolerance, `${a} is not close to ${b}`);
 
@@ -123,4 +123,38 @@ test('saved drawings are cleaned before use', () => {
   assert.deepEqual(clean.map((item) => item.id), ['a', 'y']);
   assert.equal(clean[1].color, '#d9b26f');
   assert.deepEqual(sanitiseDrawings('nonsense'), []);
+});
+
+test('a ruler is a box with a diagonal guide and two handles', () => {
+  const ruler = { ...trend, id: 'r', type: 'ruler' };
+  const shape = buildShape(ruler, identity, 500);
+  assert.equal(shape.handles.length, 2);
+  assert.equal(shape.segments.length, 1);
+  assert.deepEqual(shape.box, { x: 0, y: 0, width: 100, height: 100 });
+});
+
+test('a ruler measures the signed change, percentage, candles and time', () => {
+  const up = measureRuler({ time: 0, price: 200 }, { time: 7200, price: 210 }, 2);
+  assert.deepEqual(up, { change: 10, percent: 5, bars: 2, seconds: 7200 });
+  const down = measureRuler({ time: 7200, price: 200 }, { time: 0, price: 150 }, 2);
+  assert.equal(down.change, -50);
+  assert.equal(down.percent, -25);
+  assert.equal(down.seconds, 7200);
+  assert.equal(measureRuler({ time: 0, price: 0 }, { time: 1, price: 5 }, 1).percent, 0);
+});
+
+test('a duration is written in its two largest units', () => {
+  assert.equal(formatDuration(45), '45s');
+  assert.equal(formatDuration(2700), '45m');
+  assert.equal(formatDuration(9000), '2h 30m');
+  assert.equal(formatDuration(3 * 86400 + 4 * 3600), '3d 4h');
+  assert.equal(formatDuration(86400), '1d');
+});
+
+test('a saved ruler is kept and a ruler with one point is dropped', () => {
+  const kept = sanitiseDrawings([
+    { id: 'r1', type: 'ruler', color: '#60a5fa', points: [{ time: 1, price: 2 }, { time: 3, price: 4 }] },
+    { id: 'r2', type: 'ruler', color: '#60a5fa', points: [{ time: 1, price: 2 }] },
+  ]);
+  assert.deepEqual(kept.map((item) => item.id), ['r1']);
 });
